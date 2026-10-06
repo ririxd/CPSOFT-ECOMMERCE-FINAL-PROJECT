@@ -1,0 +1,21 @@
+# Local secrets
+.env
+.env.*
+!.env.example
+
+# Dependencies and generated output
+node_modules/
+dist/
+build/
+coverage/
+
+# Logs and operating system files
+*.log
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# Editor swap and backup files
+*.swp
+*.swo
+*~
