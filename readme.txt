@@ -23,7 +23,6 @@ styles.css       Base styles, preserved template effects, and Art House design
 css/vendor.css   Vendor styles
 js/script.js     Existing page interactions and slider setup
 js/plugins.js    Existing vendor plugins
-images/          Original project image assets
 
 CUSTOMIZE
 ---------
