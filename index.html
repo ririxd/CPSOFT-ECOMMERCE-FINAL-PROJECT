@@ -1,0 +1,159 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Art House is an independent art shop for original works and thoughtfully made prints.">
+    <meta name="theme-color" content="#f4f0e9">
+    <title>Art House — Art for the everyday</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/swiper@9/swiper-bundle.min.css">
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+    <svg xmlns="http://www.w3.org/2000/svg" class="icon-definitions" aria-hidden="true">
+        <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></symbol>
+        <symbol id="icon-bag" viewBox="0 0 24 24"><path d="M4 8h16l-1 13H5L4 8Z"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/></symbol>
+        <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M4 12h15m-6-6 6 6-6 6"/></symbol>
+    </svg>
+
+    <div class="announcement">A little more art, a little less ordinary <span>✳</span> Complimentary shipping over $100</div>
+
+    <header class="site-header">
+        <nav class="navbar navbar-expand-lg" aria-label="Main navigation">
+            <div class="container site-nav-wrap">
+                <a class="navbar-brand" href="#home" aria-label="Art House home">art<span>house</span><i>®</i></a>
+                <button class="navbar-toggler" type="button" data-bs-toggle="collapse" data-bs-target="#mainNav" aria-controls="mainNav" aria-expanded="false" aria-label="Toggle navigation"><span class="navbar-toggler-icon"></span></button>
+                <div class="collapse navbar-collapse" id="mainNav">
+                    <ul class="navbar-nav mx-auto">
+                        <li class="nav-item"><a class="nav-link" href="#shop">Shop art</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#artists">Our artists</a></li>
+                        <li class="nav-item"><a class="nav-link" href="#story">Our story</a></li>
+                    </ul>
+                    <div class="nav-tools">
+                        <button class="icon-button search-button" type="button" aria-label="Search artworks"><svg><use href="#icon-search"/></svg></button>
+                        <button class="icon-button bag-button" type="button" data-bs-toggle="offcanvas" data-bs-target="#offcanvasCart" aria-label="Open shopping bag">Bag <span class="bag-count">0</span><svg><use href="#icon-bag"/></svg></button>
+                    </div>
+                </div>
+            </div>
+        </nav>
+    </header>
+
+    <div class="search-popup" role="dialog" aria-modal="true" aria-label="Search artworks">
+        <div class="search-popup-container">
+            <button type="button" class="search-popup-close" aria-label="Close search">×</button>
+            <p class="eyebrow">Find something you love</p>
+            <form class="search-form" role="search" action="#shop">
+                <input type="search" id="search-form" class="form-control" placeholder="Try ‘blue’, ‘prints’ or an artist" name="s">
+                <button type="submit" aria-label="Submit search"><svg><use href="#icon-search"/></svg></button>
+            </form>
+            <div class="search-suggestions"><span>Popular:</span> Abstract · Prints · Under $100</div>
+        </div>
+    </div>
+
+    <div class="offcanvas offcanvas-end bag-panel" tabindex="-1" id="offcanvasCart" aria-labelledby="bagTitle">
+        <div class="offcanvas-header"><div><p class="eyebrow mb-1">Your collection</p><h2 class="offcanvas-title" id="bagTitle">Your bag <span class="bag-count">0</span></h2></div><button type="button" class="btn-close" data-bs-dismiss="offcanvas" aria-label="Close"></button></div>
+        <div class="offcanvas-body"><div class="bag-empty-art">✳</div><h3>Your bag is waiting for something lovely.</h3><p>Explore original work and limited edition prints from independent artists.</p><a class="button-dark" href="#shop" data-bs-dismiss="offcanvas">Explore the art <svg><use href="#icon-arrow"/></svg></a></div>
+    </div>
+
+    <main id="home">
+        <section class="hero-section">
+            <div class="container hero-grid">
+                <div class="hero-copy">
+                    <p class="eyebrow"><span class="eyebrow-mark">✳</span> Art for the everyday</p>
+                    <h1>Make room<br>for <em>feeling.</em></h1>
+                    <p class="hero-description">Original works and collectible prints by artists with something to say. Find the piece that feels like you.</p>
+                    <a class="button-dark" href="#shop">Find your art <svg><use href="#icon-arrow"/></svg></a>
+                    <div class="hero-note"><span class="note-line"></span> A considered collection of independent art</div>
+                </div>
+                <div class="hero-art" aria-label="Abstract artwork in warm colors" role="img">
+                    <div class="art-sun"></div><div class="art-arch"></div><div class="art-shape"></div><div class="art-orbit"></div>
+                    <span class="art-signature">A study in stillness · No. 04</span><span class="art-index">01 / 04</span>
+                    <div class="hero-art-label"><span>New perspective</span><b>Art that stays with you.</b></div>
+                </div>
+                <span class="hero-side-note">CURATED WITH CARE · MADE TO LIVE WITH</span>
+            </div>
+        </section>
+
+        <section class="shop-section section-space" id="shop">
+            <div class="container">
+                <div class="section-heading"><div><p class="eyebrow">The collection</p><h2>Good art. <em>Good feeling.</em></h2></div><a class="text-link" href="#artwork-grid">Explore all art <svg><use href="#icon-arrow"/></svg></a></div>
+                <div class="category-row" aria-label="Art categories"><a href="#artwork-grid" class="category-chip active" data-filter="all">All art <span>04</span></a><a href="#artwork-grid" class="category-chip" data-filter="original">Originals <span>01</span></a><a href="#artwork-grid" class="category-chip" data-filter="print">Prints <span>03</span></a><a href="#artwork-grid" class="category-chip" data-filter="under100">Under $100</a></div>
+                <div class="row g-4 artwork-grid" id="artwork-grid">
+                    <article class="col-12 col-sm-6 col-lg-3 artwork-card" data-art-kind="original" data-art-price="68"><a href="#artwork-grid" class="artwork-image canvas-one" aria-label="View Golden Hour artwork"><span class="artwork-badge">Bestseller</span><span class="artwork-add" aria-hidden="true">+</span><svg viewBox="0 0 400 500"><rect width="400" height="500" fill="#d7b07b"/><circle cx="276" cy="142" r="71" fill="#e7d3a7"/><path d="M0 320Q99 216 196 310T400 279V500H0Z" fill="#31554b"/><path d="M0 393Q122 312 216 370T400 341V500H0Z" fill="#bd6846"/><path d="M70 500q19-106 111-141 37 12 51 141" fill="#182b2d"/><path d="M101 500q14-85 81-119 27 10 42 119" fill="#e3bd78"/></svg></a><div class="artwork-meta"><div><h3>Golden Hour</h3><p>Original artwork · 30 × 40 cm</p></div><span>$68</span></div><button class="add-to-bag" data-name="Golden Hour" data-price="68">Add to bag <span>+</span></button></article>
+                    <article class="col-12 col-sm-6 col-lg-3 artwork-card" data-art-kind="print" data-art-price="54"><a href="#artwork-grid" class="artwork-image canvas-two" aria-label="View Soft Landing artwork"><span class="artwork-add" aria-hidden="true">+</span><svg viewBox="0 0 400 500"><rect width="400" height="500" fill="#d8d9ca"/><path d="M72 500V203a128 128 0 0 1 256 0v297Z" fill="#c87457"/><path d="M119 500V211a81 81 0 0 1 162 0v289Z" fill="#e9c99b"/><path d="M162 500V226a38 38 0 0 1 76 0v274Z" fill="#31524b"/><circle cx="199" cy="132" r="30" fill="#e6a85f"/></svg></a><div class="artwork-meta"><div><h3>Soft Landing</h3><p>Archival art print · 30 × 40 cm</p></div><span>$54</span></div><button class="add-to-bag" data-name="Soft Landing" data-price="54">Add to bag <span>+</span></button></article>
+                    <article class="col-12 col-sm-6 col-lg-3 artwork-card" data-art-kind="print" data-art-price="72"><a href="#artwork-grid" class="artwork-image canvas-three" aria-label="View Sunday in Blue artwork"><span class="artwork-badge">New</span><span class="artwork-add" aria-hidden="true">+</span><svg viewBox="0 0 400 500"><rect width="400" height="500" fill="#e8daca"/><path d="M0 139q88-80 166 1t234-3v363H0Z" fill="#a9b7ad"/><path d="M0 244q86-84 175 3t225-1v254H0Z" fill="#476c70"/><path d="M0 348q90-87 188 1t212-7v158H0Z" fill="#203d4d"/><circle cx="284" cy="107" r="38" fill="#d18663"/><path d="M88 500q26-96 89-120 59 26 72 120" fill="#c1a277"/></svg></a><div class="artwork-meta"><div><h3>Sunday in Blue</h3><p>Limited edition print · 30 × 40 cm</p></div><span>$72</span></div><button class="add-to-bag" data-name="Sunday in Blue" data-price="72">Add to bag <span>+</span></button></article>
+                    <article class="col-12 col-sm-6 col-lg-3 artwork-card" data-art-kind="print" data-art-price="42"><a href="#artwork-grid" class="artwork-image canvas-four" aria-label="View Wildflower No. 2 artwork"><span class="artwork-add" aria-hidden="true">+</span><svg viewBox="0 0 400 500"><rect width="400" height="500" fill="#d8c2a5"/><path d="M70 500q10-195 112-354m-44 354q0-151 113-275m-14 275q4-135 92-218" fill="none" stroke="#355b4e" stroke-width="13"/><g fill="#f2e8d6"><circle cx="182" cy="143" r="34"/><circle cx="290" cy="224" r="27"/><circle cx="144" cy="267" r="24"/></g><g fill="#d77a58"><circle cx="182" cy="143" r="11"/><circle cx="290" cy="224" r="9"/><circle cx="144" cy="267" r="8"/></g><path d="M120 325q-61-29-67-82 60 4 85 57m92-35q-7-61 39-96 24 58-17 103m2 103q55-52 110-30-38 51-105 58" fill="#66836b"/></svg></a><div class="artwork-meta"><div><h3>Wildflower No. 2</h3><p>Risograph print · 21 × 29.7 cm</p></div><span>$42</span></div><button class="add-to-bag" data-name="Wildflower No. 2" data-price="42">Add to bag <span>+</span></button></article>
+                </div>
+                <p class="collection-footnote">Thoughtfully made. Carefully packed. Ready for your walls.</p>
+            </div>
+        </section>
+
+        <section class="artist-section" id="artists"><div class="container artist-inner"><div class="artist-stamp">ART<br>LOVES<br>YOU <span>✳</span></div><div><p class="eyebrow">Independent by nature</p><h2>Good things happen<br>when artists get <em>the wall.</em></h2><p>We work with independent artists to bring more original voices into the spaces we live in. Every piece has a person and a point of view behind it.</p><a class="text-link" href="#story">Meet the artists <svg><use href="#icon-arrow"/></svg></a></div><div class="artist-scribble" aria-hidden="true">made with<br>feeling <span>♡</span></div></div></section>
+
+        <section class="newsletter-section" id="story"><div class="container newsletter-inner"><p class="eyebrow">A note from the art world</p><h2>Art, ideas & good things.<br><em>In your inbox, occasionally.</em></h2><form class="newsletter-form"><label class="visually-hidden" for="emailAddress">Email address</label><input id="emailAddress" type="email" placeholder="Your email address" required><button type="submit">Count me in <svg><use href="#icon-arrow"/></svg></button></form><p class="newsletter-note">A thoughtful little email, now and then. Unsubscribe whenever.</p></div></section>
+    </main>
+
+    <footer class="site-footer" id="contact"><div class="container"><div class="footer-top"><a class="footer-brand" href="#home">art<span>house</span><i>®</i></a><p>Good art for the life<br>you actually live.</p><div class="footer-links"><a href="#shop">Shop</a><a href="#artists">Artists</a><a href="#story">Our story</a><a href="mailto:hello@arthouse.example">Say hello</a></div><div class="social-links"><a href="#contact" aria-label="Instagram">ig</a><a href="#contact" aria-label="Pinterest">pin</a></div></div><div class="footer-bottom"><span>© 2026 Art House. Made for art lovers.</span><span>Thoughtfully collected · Carefully sent</span></div></div></footer>
+
+    <script src="js/jquery-1.11.0.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/js/bootstrap.bundle.min.js" crossorigin="anonymous"></script>
+    <script src="https://cdn.jsdelivr.net/npm/swiper/swiper-bundle.min.js"></script>
+    <script src="js/plugins.js"></script>
+    <script src="js/script.js"></script>
+    <script>
+      (function () {
+        var bag = [];
+        function renderBag() {
+          document.querySelectorAll('.bag-count').forEach(function (el) { el.textContent = bag.length; });
+          var body = document.querySelector('#offcanvasCart .offcanvas-body');
+          if (!bag.length) return;
+          body.innerHTML = '<ul class="bag-items">' + bag.map(function (item) { return '<li><span>' + item.name + '</span><b>$' + item.price + '</b></li>'; }).join('') + '</ul><p class="bag-total">Subtotal <b>$' + bag.reduce(function (sum, item) { return sum + item.price; }, 0) + '</b></p><p class="bag-message">Checkout will be available when the store is connected.</p>';
+        }
+        document.querySelectorAll('.add-to-bag').forEach(function (button) {
+          button.addEventListener('click', function () {
+            bag.push({ name: button.dataset.name, price: Number(button.dataset.price) });
+            renderBag();
+            button.classList.add('added');
+            button.innerHTML = 'Added to bag <span>✓</span>';
+          });
+        });
+        var cards = Array.prototype.slice.call(document.querySelectorAll('.artwork-card'));
+        var chips = document.querySelectorAll('.category-chip');
+        var activeFilter = 'all';
+        function filterArt(query) {
+          var term = (query || '').trim().toLowerCase();
+          cards.forEach(function (card) {
+            var text = card.textContent.toLowerCase();
+            var matchesText = !term || text.indexOf(term) !== -1;
+            var matchesKind = activeFilter === 'all' ||
+              (activeFilter === 'under100' ? Number(card.dataset.artPrice) < 100 : card.dataset.artKind === activeFilter);
+            card.hidden = !(matchesText && matchesKind);
+          });
+        }
+        chips.forEach(function (chip) {
+          chip.addEventListener('click', function () {
+            activeFilter = chip.dataset.filter;
+            chips.forEach(function (item) { item.classList.toggle('active', item === chip); });
+            filterArt(document.querySelector('#search-form').value);
+          });
+        });
+        document.querySelector('.search-form').addEventListener('submit', function (event) {
+          event.preventDefault();
+          filterArt(document.querySelector('#search-form').value);
+          document.querySelector('.search-popup').classList.remove('is-visible');
+          document.querySelector('#shop').scrollIntoView({ behavior: 'smooth' });
+        });
+        document.querySelector('.newsletter-form').addEventListener('submit', function (event) {
+          event.preventDefault();
+          var button = this.querySelector('button');
+          button.innerHTML = 'You’re on the list <span>✓</span>';
+          this.querySelector('input').value = '';
+        });
+      }());
+    </script>
+</body>
+</html>
