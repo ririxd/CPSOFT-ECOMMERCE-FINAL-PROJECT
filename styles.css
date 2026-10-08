@@ -909,8 +909,10 @@ body { margin:0; background:var(--ah-white); color:var(--ah-ink); font-family:"D
 @media(max-width:420px) { .section-heading { display:block; }.section-heading>.text-link { margin-top:17px; }.category-row { margin-top:23px; }.newsletter-form button { gap:5px; font-size:10px; } }
 
 /* Artist account pages */
-.artist-cta { display:inline-block; padding:10px 14px; background:var(--ah-ink); color:var(--ah-white); font-size:11px; white-space:nowrap; }
-.artist-cta:hover { background:var(--ah-rust); color:var(--ah-white); }
+.artist-cta { position:relative; display:inline-block; padding:10px 14px; background:var(--ah-ink); color:var(--ah-white); font-size:11px; white-space:nowrap; }
+.artist-cta::after { position:absolute; right:auto; bottom:5px; left:14px; width:0; height:1px; background:#fff7f7; content:""; transition:width 300ms ease; }
+.artist-cta:hover,.artist-cta:focus-visible { background:var(--ah-rust); color:var(--ah-white); }
+.artist-cta:hover::after,.artist-cta:focus-visible::after { width:calc(100% - 28px); }
 .artist-cta:focus-visible,.auth-page a:focus-visible,.auth-submit:focus-visible { outline:3px solid var(--ah-rust); outline-offset:4px; }
 .auth-page { display:flex; flex-direction:column; min-height:100vh; min-height:100dvh; background:var(--ah-paper); }
 .auth-page .container { width:100%; max-width:1120px; margin-inline:auto; padding-inline:24px; }
@@ -996,25 +998,6 @@ body { margin:0; background:var(--ah-white); color:var(--ah-ink); font-family:"D
 .verification-address { overflow-wrap: anywhere; margin: 0 0 24px; color: var(--ah-ink); font-size: 14px; font-weight: 700; }
 .verification-dialog .auth-submit { width: 100%; }
 .verification-status { margin: 14px 0 0; color: #8b4833; font-size: 12px; line-height: 1.5; }
-.auth-card > .eyebrow {
-  position: relative;
-  display: inline-block;
-  width: max-content;
-  transition: color .2s ease;
-}
-.auth-card > .eyebrow::after {
-  position: absolute;
-  right: auto;
-  bottom: -3px;
-  left: 0;
-  width: 0;
-  height: 1px;
-  background-color: var(--ah-rust);
-  content: "";
-  transition: width 300ms ease;
-}
-.auth-card > .eyebrow:hover { color: var(--ah-rust); }
-.auth-card > .eyebrow:hover::after { width: 90%; }
 @media (max-width: 479.98px) { .verification-dialog { padding: 35px 25px 27px; } }
 
 /* Account page layout refinements */
