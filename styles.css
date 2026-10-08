@@ -909,10 +909,10 @@ body { margin:0; background:var(--ah-white); color:var(--ah-ink); font-family:"D
 @media(max-width:420px) { .section-heading { display:block; }.section-heading>.text-link { margin-top:17px; }.category-row { margin-top:23px; }.newsletter-form button { gap:5px; font-size:10px; } }
 
 /* Artist account pages */
-.artist-cta { position:relative; display:inline-block; padding:10px 14px; background:var(--ah-ink); color:var(--ah-white); font-size:11px; white-space:nowrap; }
-.artist-cta::after { position:absolute; right:auto; bottom:5px; left:14px; width:0; height:1px; background:#fff7f7; content:""; transition:width 300ms ease; }
-.artist-cta:hover,.artist-cta:focus-visible { background:var(--ah-rust); color:var(--ah-white); }
-.artist-cta:hover::after,.artist-cta:focus-visible::after { width:calc(100% - 28px); }
+.site-header .artist-cta { position:relative; display:block; width:max-content; padding:10px 0; color:var(--ah-ink); font-size:11px; font-weight:600; letter-spacing:.09em; text-decoration:none; text-transform:uppercase; white-space:nowrap; }
+.site-header .artist-cta::after { position:absolute; right:auto; bottom:4px; left:0; width:0; height:1px; background:var(--ah-rust); content:""; transition:width 300ms ease; }
+.site-header .artist-cta:hover,.site-header .artist-cta:focus-visible { color:var(--ah-rust); }
+.site-header .artist-cta:hover::after,.site-header .artist-cta:focus-visible::after { width:100%; }
 .artist-cta:focus-visible,.auth-page a:focus-visible,.auth-submit:focus-visible { outline:3px solid var(--ah-rust); outline-offset:4px; }
 .auth-page { display:flex; flex-direction:column; min-height:100vh; min-height:100dvh; background:var(--ah-paper); }
 .auth-page .container { width:100%; max-width:1120px; margin-inline:auto; padding-inline:24px; }
