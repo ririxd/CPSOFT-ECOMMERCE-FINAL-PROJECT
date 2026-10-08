@@ -35,3 +35,11 @@ with the shop's information.
 The bag currently works as a front-end preview only. Product and quantity
 selection are kept in the current browser session; checkout, inventory,
 subscriptions, and payment processing need to be connected to a store service.
+
+ARTIST ACCOUNT UI
+-----------------
+The navbar's “be a house-artist” link opens login.html. Artists can switch to
+register.html to enter a username, email, and password. Both forms validate
+required fields and email format in the browser. These are UI previews: no
+accounts or sessions are created, and credentials are never sent or stored.
+Connect an authentication backend before enabling real account access.

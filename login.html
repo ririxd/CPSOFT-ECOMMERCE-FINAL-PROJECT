@@ -1,0 +1,52 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <meta name="description" content="Welcome back to your creative home.">
+    <meta name="theme-color" content="#f4f0e9">
+    <title>Log in — Art House</title>
+    <link rel="preconnect" href="https://fonts.googleapis.com">
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+    <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap" rel="stylesheet">
+    <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet" crossorigin="anonymous">
+    <script src="js/auth.js" defer></script>
+    <link rel="stylesheet" href="styles.css">
+</head>
+<body class="auth-page">
+    <div class="announcement">Your art deserves a home <span>✳</span> Meet your next chapter</div>
+    <header class="site-header">
+        <nav class="container auth-nav" aria-label="Main navigation">
+            <a class="navbar-brand" href="index.html" aria-label="Art House home">art<span>house</span><i>®</i></a>
+            <a class="auth-back" href="index.html#shop">Back to the collection <span aria-hidden="true">↗</span></a>
+        </nav>
+    </header>
+    <main class="container auth-layout">
+        <section class="auth-intro" aria-labelledby="artist-heading">
+            <p class="eyebrow">For the makers &amp; dreamers</p>
+            <h1 id="artist-heading">Your work. <br>Your story. <br><em>Our house.</em></h1>
+            <p>Make yourself at home. Join a community of independent artists and share your work with people who love art.</p>
+            <div class="auth-art" aria-hidden="true"><div></div><span>Made by you. Discovered here.</span></div>
+        </section>
+        <section class="auth-card" aria-labelledby="form-heading">
+            <nav class="auth-tabs" aria-label="Account access">
+                <a href="login.html" aria-current="page">Log in</a>
+                <a href="register.html">Create an account</a>
+            </nav>
+            <p class="eyebrow">Be a house-artist</p>
+            <h2 id="form-heading">Log in</h2>
+            <p class="auth-description">Welcome back to your creative home.</p>
+            <form class="auth-form" method="post">
+                
+                <div class="auth-field"><label for="email">Email</label><input id="email" name="email" type="email" autocomplete="username" required></div>
+                <div class="auth-field"><label for="password">Password</label><input id="password" name="password" type="password" autocomplete="current-password" required></div>
+                <button class="button-dark auth-submit" type="submit" disabled>Log in <span aria-hidden="true">↗</span></button>
+                <p class="auth-status" role="status"></p>
+                <noscript><p>Please enable JavaScript to use this form preview.</p></noscript>
+            </form>
+            <p class="auth-switch">New to the house? <a href="register.html">Create an account</a></p>
+        </section>
+    </main>
+    <footer class="auth-footer">Independent art. Shared with the world. <span aria-hidden="true">✳</span> Art House</footer>
+</body>
+</html>
