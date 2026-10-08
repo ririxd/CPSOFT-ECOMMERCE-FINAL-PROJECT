@@ -996,6 +996,30 @@ body { margin:0; background:var(--ah-white); color:var(--ah-ink); font-family:"D
 .verification-address { overflow-wrap: anywhere; margin: 0 0 24px; color: var(--ah-ink); font-size: 14px; font-weight: 700; }
 .verification-dialog .auth-submit { width: 100%; }
 .verification-status { margin: 14px 0 0; color: #8b4833; font-size: 12px; line-height: 1.5; }
+.auth-card > .eyebrow {
+  display: inline-flex;
+  width: max-content;
+  align-items: center;
+  gap: 8px;
+  margin: 0 0 14px;
+  padding: 7px 11px;
+  border: 1px solid #dce3da;
+  border-radius: 999px;
+  background: #f1f4ef;
+  color: #38584b;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: .12em;
+  line-height: 1;
+  text-transform: uppercase;
+}
+.auth-card > .eyebrow::before {
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ah-rust);
+  content: "";
+}
 @media (max-width: 479.98px) { .verification-dialog { padding: 35px 25px 27px; } }
 
 /* Account page layout refinements */
