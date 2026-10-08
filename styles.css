@@ -1384,3 +1384,35 @@ body { margin:0; background:var(--ah-white); color:var(--ah-ink); font-family:"D
   .auth-page .auth-tabs { margin-bottom: 30px; }
   .auth-page .auth-description { margin-bottom: 25px; }
 }
+
+/* Shared left-to-right underline motion for text actions */
+.button-dark,
+.text-link,
+.newsletter-form button {
+  position: relative;
+}
+.button-dark::after,
+.text-link::after,
+.newsletter-form button::after {
+  position: absolute;
+  right: auto;
+  bottom: 5px;
+  left: 0;
+  width: 0;
+  height: 1px;
+  background: currentColor;
+  content: "";
+  transition: width 300ms ease;
+}
+.button-dark::after { left: 17px; background: rgba(255, 255, 255, .85); }
+.button-dark:hover::after,
+.button-dark:focus-visible::after { width: calc(100% - 34px); }
+.text-link { border-bottom-color: transparent; }
+.text-link:hover { border-bottom-color: transparent; }
+.text-link::after { bottom: -1px; background: var(--ah-rust); }
+.text-link:hover::after,
+.text-link:focus-visible::after { width: 100%; }
+.newsletter-form button::after { bottom: 2px; background: var(--ah-rust); }
+.newsletter-form button:hover::after,
+.newsletter-form button:focus-visible::after { width: 100%; }
+.site-header .nav-link:focus-visible::before { width: 100%; }
