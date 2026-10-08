@@ -1020,6 +1020,24 @@ body { margin:0; background:var(--ah-white); color:var(--ah-ink); font-family:"D
   background: var(--ah-rust);
   content: "";
 }
+.auth-card > .eyebrow {
+  position: relative;
+  transition: color .2s ease;
+}
+.auth-card > .eyebrow::after {
+  position: absolute;
+  right: 11px;
+  bottom: -4px;
+  left: 11px;
+  height: 1px;
+  background: var(--ah-rust);
+  content: "";
+  transform: scaleX(0);
+  transform-origin: left;
+  transition: transform .22s ease;
+}
+.auth-card > .eyebrow:hover { color: var(--ah-rust); }
+.auth-card > .eyebrow:hover::after { transform: scaleX(1); }
 @media (max-width: 479.98px) { .verification-dialog { padding: 35px 25px 27px; } }
 
 /* Account page layout refinements */
