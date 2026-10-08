@@ -19,3 +19,13 @@ desktop.ini
 *.swp
 *.swo
 *~
+
+# Private authentication database
+data/
+*.sqlite
+*.sqlite-*
+
+# Python runtime files
+__pycache__/
+*.py[cod]
+.venv/

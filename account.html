@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <meta name="description" content="Welcome back to your creative home.">
     <meta name="theme-color" content="#f4f0e9">
-    <title>Log in — Art House</title>
+    <title>Your account — Art House</title>
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap" rel="stylesheet">
@@ -28,21 +28,11 @@
             <div class="auth-art" aria-hidden="true"><div></div><span>Made by you. Discovered here.</span></div>
         </section>
         <section class="auth-card" aria-labelledby="form-heading">
-            <nav class="auth-tabs" aria-label="Account access">
-                <a href="login.html" aria-current="page">Log in</a>
-                <a href="register.html">Create an account</a>
-            </nav>
-            <p class="eyebrow">Be a house-artist</p>
-            <h2 id="form-heading">Log in</h2>
-            <p class="auth-description">Welcome back to your creative home.</p>
-            <form class="auth-form" method="post" action="/api/auth/login">
-                
-                <div class="auth-field"><label for="email">Email</label><input id="email" name="email" type="email" maxlength="254" autocomplete="username" required></div>
-                <div class="auth-field"><label for="password">Password</label><input id="password" name="password" type="password" maxlength="128" autocomplete="current-password" required></div>
-                <button class="button-dark auth-submit" type="submit">Log in <span aria-hidden="true">↗</span></button>
-                <p class="auth-status" role="status">{{error}}</p>
-            </form>
-            <p class="auth-switch">New to the house? <a href="register.html">Create an account</a></p>
+            <p class="eyebrow">Your house-artist account</p>
+            <h2 id="form-heading">Welcome home.</h2>
+            <p class="auth-description">You're part of the house.</p>
+            <dl><dt>Username</dt><dd id="account-username">{{username}}</dd><dt>Email</dt><dd id="account-email">{{email}}</dd></dl>
+            <form method="post" action="/api/auth/logout"><button id="logout" class="button-dark auth-submit" type="submit">Log out</button></form>
         </section>
     </main>
     <footer class="auth-footer">Independent art. Shared with the world. <span aria-hidden="true">✳</span> Art House</footer>
