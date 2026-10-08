@@ -1181,3 +1181,183 @@ body { margin:0; background:var(--ah-white); color:var(--ah-ink); font-family:"D
   .auth-tabs a { font-size: 12px; }
   .auth-card h2 { font-size: 33px; }
 }
+
+/* Login page: split-panel composition in the Art House palette */
+.login-page .auth-layout {
+  max-width: 1168px;
+  min-height: 590px;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 0;
+  align-items: stretch;
+  overflow: hidden;
+  padding: 0;
+  border: 1px solid #e2ddd3;
+  border-radius: 8px;
+  background: #fffefa;
+  box-shadow: 0 24px 70px rgba(36, 40, 33, .10);
+}
+.login-page .auth-intro {
+  position: relative;
+  display: flex;
+  min-height: 590px;
+  justify-content: flex-end;
+  overflow: hidden;
+  padding: clamp(32px, 5vw, 64px);
+  background: linear-gradient(155deg, #304b42 0%, #203a32 100%);
+}
+.login-page .auth-intro::before {
+  top: -110px;
+  right: -105px;
+  width: 390px;
+  height: 390px;
+  border-color: rgba(239, 221, 190, .36);
+}
+.login-page .auth-intro::after {
+  right: -110px;
+  bottom: -205px;
+  width: 470px;
+  height: 470px;
+  border-color: rgba(239, 221, 190, .28);
+  background: rgba(188, 100, 71, .17);
+}
+.login-page .auth-art {
+  position: absolute;
+  z-index: 0;
+  inset: 0;
+  width: auto;
+  height: auto;
+  max-width: none;
+  margin: 0;
+  border: 0;
+  background:
+    radial-gradient(ellipse at 72% 27%, rgba(230, 190, 126, .4), transparent 27%),
+    linear-gradient(145deg, transparent 46%, rgba(188, 100, 71, .35) 46.2%, rgba(188, 100, 71, .35) 62%, transparent 62.2%);
+}
+.login-page .auth-art::before {
+  top: 14%;
+  left: 13%;
+  width: min(44vw, 270px);
+  height: min(44vw, 270px);
+  border: 0;
+  background: #d2a468;
+  opacity: .92;
+}
+.login-page .auth-art::after {
+  top: 25%;
+  right: 11%;
+  bottom: auto;
+  width: 46%;
+  height: 80%;
+  border: 0;
+  border-radius: 48% 48% 0 0;
+  background: #bc6447;
+  transform: rotate(13deg);
+}
+.login-page .auth-art div {
+  top: 29%;
+  left: 23%;
+  width: 64%;
+  height: 34%;
+  border: 2px solid rgba(255, 250, 240, .85);
+  transform: rotate(-32deg);
+}
+.login-page .auth-art span {
+  right: 24px;
+  bottom: 23px;
+  left: 24px;
+  width: max-content;
+  max-width: calc(100% - 48px);
+  padding: 8px 11px;
+  background: rgba(32, 58, 50, .86);
+  color: #fffaf0;
+  font-size: 9px;
+  letter-spacing: .14em;
+}
+.login-page .auth-intro-copy {
+  position: relative;
+  z-index: 1;
+  width: 100%;
+  max-width: 470px;
+  margin-top: auto;
+  padding-top: 250px;
+  color: #fffaf0;
+}
+.login-page .auth-intro .eyebrow { color: #f0c58d; }
+.login-page .auth-intro h1 {
+  margin-bottom: 20px;
+  color: #fffaf0;
+  font-size: clamp(42px, 4.2vw, 58px);
+  line-height: 1.08;
+}
+.login-page .auth-intro h1 em { color: #f0c58d; }
+.login-page .auth-quote {
+  max-width: 390px;
+  margin: 0 0 10px;
+  color: #f6f0e6;
+  font: italic 17px/1.65 "Playfair Display", serif;
+}
+.login-page .auth-attribution {
+  margin: 0;
+  color: #d1d8ce;
+  font-size: 10px;
+  letter-spacing: .06em;
+}
+.login-page .auth-card {
+  display: flex;
+  width: 100%;
+  max-width: none;
+  min-width: 0;
+  flex-direction: column;
+  justify-content: center;
+  align-self: stretch;
+  padding: clamp(34px, 5vw, 68px);
+  border: 0;
+  border-radius: 0;
+  background: #fffefa;
+  box-shadow: none;
+}
+.login-page .auth-tabs { margin-bottom: 40px; }
+.login-page .auth-card h2 {
+  margin-bottom: 8px;
+  font-size: clamp(34px, 3vw, 42px);
+}
+.login-page .auth-description { margin-bottom: 32px; }
+.login-page .auth-form { width: 100%; }
+.login-page .auth-field { margin-bottom: 21px; }
+.login-page .auth-field input { min-height: 52px; }
+.login-page .auth-submit { margin-top: 5px; }
+.login-page .auth-switch { margin-top: 25px; }
+
+@media (max-width: 991.98px) {
+  .login-page .auth-layout {
+    max-width: 650px;
+    min-height: 0;
+    grid-template-columns: minmax(0, 1fr);
+    margin-block: 30px;
+  }
+  .login-page .auth-intro {
+    min-height: 330px;
+    padding: 34px;
+  }
+  .login-page .auth-intro-copy { max-width: 520px; padding-top: 110px; }
+  .login-page .auth-intro h1 { font-size: 42px; }
+  .login-page .auth-intro h1 br { display: none; }
+  .login-page .auth-intro h1 em { display: block; }
+  .login-page .auth-art::before { width: 200px; height: 200px; }
+  .login-page .auth-art::after { width: 34%; height: 85%; }
+  .login-page .auth-art div { width: 48%; }
+  .login-page .auth-card { padding: 42px clamp(28px, 7vw, 64px); }
+}
+@media (max-width: 479.98px) {
+  .login-page .auth-layout { margin-block: 14px; border-radius: 5px; }
+  .login-page .auth-intro { min-height: 280px; padding: 26px 22px; }
+  .login-page .auth-intro-copy { padding-top: 86px; }
+  .login-page .auth-intro h1 { margin-bottom: 12px; font-size: 34px; }
+  .login-page .auth-quote { max-width: 290px; font-size: 14px; }
+  .login-page .auth-intro .eyebrow { margin-bottom: 9px; }
+  .login-page .auth-art::before { top: 8%; left: 8%; width: 150px; height: 150px; }
+  .login-page .auth-art::after { top: 17%; right: 3%; width: 42%; height: 90%; }
+  .login-page .auth-card { padding: 32px 23px; }
+  .login-page .auth-tabs { margin-bottom: 30px; }
+  .login-page .auth-description { margin-bottom: 25px; }
+}
