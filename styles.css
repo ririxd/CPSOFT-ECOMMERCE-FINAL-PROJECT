@@ -1004,18 +1004,17 @@ body { margin:0; background:var(--ah-white); color:var(--ah-ink); font-family:"D
 }
 .auth-card > .eyebrow::after {
   position: absolute;
-  right: 0;
+  right: auto;
   bottom: -3px;
   left: 0;
+  width: 0;
   height: 1px;
-  background: var(--ah-rust);
+  background-color: var(--ah-rust);
   content: "";
-  transform: scaleX(0);
-  transform-origin: left;
-  transition: transform .22s ease;
+  transition: width 300ms ease;
 }
 .auth-card > .eyebrow:hover { color: var(--ah-rust); }
-.auth-card > .eyebrow:hover::after { transform: scaleX(1); }
+.auth-card > .eyebrow:hover::after { width: 90%; }
 @media (max-width: 479.98px) { .verification-dialog { padding: 35px 25px 27px; } }
 
 /* Account page layout refinements */
