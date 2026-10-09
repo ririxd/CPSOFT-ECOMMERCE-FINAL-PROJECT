@@ -4,26 +4,47 @@ import hmac
 import html
 import json
 import logging
+from email.message import EmailMessage
 import os
 from pathlib import Path
 import re
 import secrets
+import smtplib
+import ssl
 import sqlite3
 import time
 from contextlib import closing
 from http import HTTPStatus
 from http.cookies import SimpleCookie, CookieError
-from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlsplit
-from urllib.request import Request, urlopen
 from wsgiref.simple_server import make_server
 
 ROOT = Path(__file__).resolve().parent
-try:
-    from dotenv import load_dotenv
-    load_dotenv(ROOT / '.env')
-except ImportError:
-    pass
+
+
+def load_env_file(path):
+    """Load simple KEY=value entries without requiring a third-party dotenv package."""
+    if not path.is_file():
+        return
+    for line in path.read_text(encoding='utf-8').splitlines():
+        line = line.strip()
+        if not line or line.startswith('#'):
+            continue
+        if line.startswith('export '):
+            line = line[7:].lstrip()
+        if '=' not in line:
+            continue
+        name, value = line.split('=', 1)
+        name, value = name.strip(), value.strip()
+        if len(value) >= 2 and value[0] == value[-1] and value[0] in ('"', "'"):
+            value = value[1:-1]
+        elif ' #' in value:
+            value = value.split(' #', 1)[0].rstrip()
+        if name and name not in os.environ:
+            os.environ[name] = value
+
+
+load_env_file(ROOT / '.env')
 SESSION_SECONDS = 7 * 24 * 60 * 60
 PUBLIC_FILES = {
     '/': 'text/html', '/index.html': 'text/html', '/styles.css': 'text/css',
@@ -85,23 +106,26 @@ def password_hash(password, salt):
 
 
 def send_brevo_email(recipient, subject, text_content):
-    api_key = os.environ.get('BREVO_API_KEY', '')
+    smtp_login = os.environ.get('BREVO_SMTP_LOGIN', '')
+    smtp_key = os.environ.get('BREVO_SMTP_KEY', '')
+    smtp_host = os.environ.get('BREVO_SMTP_HOST', 'smtp-relay.brevo.com')
+    smtp_port = int(os.environ.get('BREVO_SMTP_PORT', '587'))
     sender_email = os.environ.get('BREVO_SENDER_EMAIL', '')
     sender_name = os.environ.get('BREVO_SENDER_NAME', 'Art House')
-    if not api_key or not sender_email:
+    if not smtp_login or not smtp_key or not sender_email:
         raise RuntimeError('Brevo transactional email is not configured.')
-    payload = json.dumps({
-        'sender': {'name': sender_name, 'email': sender_email},
-        'to': [{'email': recipient}],
-        'subject': subject,
-        'textContent': text_content,
-    }).encode('utf-8')
-    request = Request('https://api.brevo.com/v3/smtp/email', data=payload, method='POST',
-                      headers={'api-key': api_key, 'accept': 'application/json',
-                               'content-type': 'application/json'})
-    with urlopen(request, timeout=12) as response:
-        if response.status not in (200, 201, 202):
-            raise RuntimeError(f'Brevo returned HTTP {response.status}.')
+    message = EmailMessage()
+    message['From'] = f'{sender_name} <{sender_email}>'
+    message['To'] = recipient
+    message['Subject'] = subject
+    message.set_content(text_content)
+    context = ssl.create_default_context()
+    with smtplib.SMTP(smtp_host, smtp_port, timeout=12) as smtp:
+        smtp.ehlo()
+        smtp.starttls(context=context)
+        smtp.ehlo()
+        smtp.login(smtp_login, smtp_key)
+        smtp.send_message(message)
 
 
 def now_ms():
@@ -346,7 +370,7 @@ class AuthApp:
                     try:
                         send_brevo_email(email, 'Your Art House password reset code',
                                          f'Your password reset code is {code}. It expires in 10 minutes. If you did not request this, ignore this email.')
-                    except (RuntimeError, HTTPError, URLError, TimeoutError, OSError):
+                    except (RuntimeError, ValueError, smtplib.SMTPException, OSError):
                         logging.exception('Brevo password reset email could not be sent')
                 return 200, {'message': 'If an account uses that email, a reset code will be sent.'}, []
             if path.endswith('/password-reset/confirm'):
@@ -479,7 +503,8 @@ def create_app():
     if production and not os.environ.get('APP_ORIGIN'):
         raise ValueError('Production requires an explicit HTTPS APP_ORIGIN.')
     if production:
-        missing = [name for name in ('APP_SECRET', 'BREVO_API_KEY', 'BREVO_SENDER_EMAIL')
+        missing = [name for name in ('APP_SECRET', 'BREVO_SMTP_LOGIN', 'BREVO_SMTP_KEY',
+                                     'BREVO_SENDER_EMAIL')
                    if not os.environ.get(name)]
         if not (os.environ.get('DATABASE_URL') or os.environ.get('SUPABASE_DB_URL')):
             missing.insert(0, 'DATABASE_URL')

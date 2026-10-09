@@ -90,7 +90,10 @@ APP_ORIGIN=https://your-domain.example
 PORT=<provided by host>
 DATABASE_URL=<Supabase PostgreSQL connection URI>
 APP_SECRET=<at least 32 random characters>
-BREVO_API_KEY=<Brevo API key>
+BREVO_SMTP_HOST=smtp-relay.brevo.com
+BREVO_SMTP_PORT=587
+BREVO_SMTP_LOGIN=<Brevo SMTP login>
+BREVO_SMTP_KEY=<Brevo SMTP key>
 BREVO_SENDER_EMAIL=<verified Brevo sender address>
 BREVO_SENDER_NAME=Art House
 
@@ -100,11 +103,13 @@ URL-encoded. PostgreSQL connections require SSL. On startup, the app applies the
 numbered SQL migrations in migrations/ before accepting requests. Back up the
 Supabase database and keep its service credentials private.
 
-In Brevo, create an API key and verify the sender address/domain before deploying.
-The app uses Brevo's transactional email API to send one-time password reset codes.
+In Brevo, find the SMTP relay settings under Transactional > Settings > SMTP & API.
+Use the SMTP login and SMTP key (not an API key), and verify the sender address/domain
+before deploying. The app connects to Brevo's SMTP relay using STARTTLS to send
+one-time password reset codes.
 Reset codes expire after 10 minutes, allow five verification attempts, and are
 stored as keyed hashes. Account existence is not disclosed by the request endpoint.
-If mail delivery fails, the app logs the failure without logging the OTP or API key.
+If mail delivery fails, the app logs the failure without logging the OTP or SMTP credentials.
 
 Generate APP_SECRET with `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
 The host must terminate HTTPS and forward requests to the WSGI service. Production
