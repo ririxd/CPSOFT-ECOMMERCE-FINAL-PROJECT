@@ -69,6 +69,58 @@ class AuthApp:
                     id INTEGER PRIMARY KEY, username TEXT NOT NULL,
                     email TEXT NOT NULL UNIQUE, salt TEXT NOT NULL, password_hash TEXT NOT NULL
                 );
+                -- Registered account identity is separate from role-specific profiles
+                -- and credential material. Existing users remain the auth compatibility table.
+                CREATE TABLE IF NOT EXISTS registered_accounts (
+                    id INTEGER PRIMARY KEY, account_type TEXT NOT NULL DEFAULT 'user'
+                        CHECK (account_type IN ('user', 'seller')),
+                    created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+                );
+                CREATE TABLE IF NOT EXISTS account_credentials (
+                    account_id INTEGER PRIMARY KEY REFERENCES registered_accounts(id) ON DELETE CASCADE,
+                    username TEXT NOT NULL UNIQUE,
+                    email TEXT NOT NULL UNIQUE COLLATE NOCASE,
+                    password_salt TEXT NOT NULL,
+                    password_hash TEXT NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS sellers (
+                    id INTEGER PRIMARY KEY REFERENCES registered_accounts(id) ON DELETE CASCADE,
+                    display_name TEXT NOT NULL,
+                    bio TEXT NOT NULL DEFAULT '',
+                    created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+                );
+                CREATE TABLE IF NOT EXISTS listed_items (
+                    id INTEGER PRIMARY KEY,
+                    seller_id INTEGER NOT NULL REFERENCES sellers(id),
+                    title TEXT NOT NULL,
+                    description TEXT NOT NULL DEFAULT '',
+                    price_cents INTEGER NOT NULL CHECK (price_cents >= 0),
+                    inventory INTEGER NOT NULL DEFAULT 0 CHECK (inventory >= 0),
+                    status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'active', 'archived')),
+                    created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+                );
+                CREATE TABLE IF NOT EXISTS checkouts (
+                    id INTEGER PRIMARY KEY,
+                    buyer_id INTEGER NOT NULL REFERENCES registered_accounts(id),
+                    status TEXT NOT NULL DEFAULT 'pending'
+                        CHECK (status IN ('pending', 'paid', 'cancelled', 'refunded')),
+                    total_cents INTEGER NOT NULL CHECK (total_cents >= 0),
+                    created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+                );
+                CREATE TABLE IF NOT EXISTS checkout_items (
+                    checkout_id INTEGER NOT NULL REFERENCES checkouts(id) ON DELETE CASCADE,
+                    item_id INTEGER NOT NULL REFERENCES listed_items(id),
+                    quantity INTEGER NOT NULL CHECK (quantity > 0),
+                    unit_price_cents INTEGER NOT NULL CHECK (unit_price_cents >= 0),
+                    PRIMARY KEY (checkout_id, item_id)
+                );
+                CREATE TABLE IF NOT EXISTS login_events (
+                    id INTEGER PRIMARY KEY,
+                    account_id INTEGER REFERENCES registered_accounts(id) ON DELETE SET NULL,
+                    email TEXT NOT NULL,
+                    succeeded INTEGER NOT NULL CHECK (succeeded IN (0, 1)),
+                    created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+                );
                 CREATE TABLE IF NOT EXISTS sessions (
                     token_hash TEXT PRIMARY KEY, user_id INTEGER NOT NULL REFERENCES users(id),
                     expires INTEGER NOT NULL
@@ -192,6 +244,13 @@ class AuthApp:
                     with db:
                         user_id = db.execute('INSERT INTO users (username, email, salt, password_hash) VALUES (?, ?, ?, ?)',
                                              (username, email, salt, hashed)).lastrowid
+                        account_id = db.execute(
+                            "INSERT INTO registered_accounts (account_type) VALUES ('user')"
+                        ).lastrowid
+                        db.execute('''INSERT INTO account_credentials
+                            (account_id, username, email, password_salt, password_hash)
+                            VALUES (?, ?, ?, ?, ?)''',
+                                   (account_id, username, email, salt, hashed))
                         headers = [self.issue_session(db, environ, user_id)]
                 except sqlite3.IntegrityError:
                     raise RequestError(409, 'Unable to create this account. Try logging in or use another email.')
