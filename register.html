@@ -47,38 +47,7 @@
             </form>
         </section>
     </main>
-    <dialog class="verification-dialog" aria-labelledby="verification-title" aria-describedby="verification-description">
-        <form method="dialog" class="verification-dialog-close-form">
-            <button class="verification-close" aria-label="Close dialog">×</button>
-        </form>
-        <div class="verification-mark" aria-hidden="true">✳</div>
-        <p class="eyebrow">One last step</p>
-        <h2 id="verification-title">Verify your email</h2>
-        <p id="verification-description">We’ll send a link to verify this address:</p>
-        <p class="verification-address" id="verification-address"></p>
-        <button class="button-dark auth-submit" type="button" id="send-verification">Send verification email <span aria-hidden="true">↗</span></button>
-        <p class="verification-status" id="verification-status" role="status" aria-live="polite"></p>
-    </dialog>
+
     <footer class="auth-footer">Independent art. Shared with the world. <span aria-hidden="true">✳</span> Art House</footer>
-    <script>
-        (function () {
-            var form = document.querySelector('.auth-form');
-            var dialog = document.querySelector('.verification-dialog');
-            var address = document.querySelector('#verification-address');
-            var status = document.querySelector('#verification-status');
-            form.addEventListener('submit', function (event) {
-                event.preventDefault();
-                address.textContent = form.elements.email.value.trim();
-                status.textContent = '';
-                dialog.showModal();
-            });
-            document.querySelector('#send-verification').addEventListener('click', function () {
-                status.textContent = 'Email delivery is not connected yet, so no message was sent.';
-            });
-            dialog.addEventListener('click', function (event) {
-                if (event.target === dialog) dialog.close();
-            });
-        }());
-    </script>
 </body>
 </html>

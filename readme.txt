@@ -8,8 +8,9 @@ newsletter signup, search overlay, and interactive shopping bag preview.
 RUN LOCALLY
 -----------
 
-Use Python 3.9 or newer with sqlite3 and hashlib.scrypt available.
-No third-party packages are required for local development.
+Use Python 3.9 or newer with sqlite3 and hashlib.scrypt available. Local SQLite
+development uses the Python standard library; production dependencies are in
+requirements.txt.
 
     python3 server.py
 
@@ -24,8 +25,12 @@ Run the authentication integration tests with:
 PROJECT FILES
 -------------
 
-server.py        Python WSGI server, authentication and sqlite3 storage
+server.py        Python WSGI server, authentication, SQLite and PostgreSQL storage
 test/test_auth.py Authentication integration tests
+migrations/      Supabase PostgreSQL schema migrations
+requirements.txt Production Python dependencies
+Dockerfile       Container deployment setup
+Procfile         WSGI process command for compatible hosts
 login.html       Login form rendered by Python
 register.html    Registration form rendered by Python
 account.html     Protected account page rendered by Python
@@ -61,7 +66,7 @@ APP_ORIGIN in their Origin header. Endpoints accept JSON or URL-encoded forms.
 HTML forms redirect after success and render errors on the page. Login,
 registration, account details and logout work without JavaScript.
 Passwords use salted scrypt hashes. Seven-day sessions use random tokens in
-HttpOnly, SameSite=Lax cookies; only token hashes are stored in SQLite. Logout
+HttpOnly, SameSite=Lax cookies; only token hashes are stored in the database. Logout
 revokes the session. Account APIs and pages are served with Cache-Control: no-store.
 Login and registration share persistent limits: 10 attempts per email and 50 per
 connection IP in 15 minutes. Forwarded IP headers are deliberately not trusted.
@@ -70,26 +75,57 @@ configure suitable edge rate limiting before scaling to a larger audience.
 
 CONFIGURATION AND DEPLOYMENT
 ----------------------------
-PORT defaults to 8000. APP_ORIGIN defaults to http://localhost:<PORT>; set it to
-the exact browser origin when using a different host or an HTTPS preview URL.
-DB_PATH defaults to data/auth.sqlite (ignored by Git and never served publicly).
-Use a persistent writable disk for this SQLite file and keep its directory private.
-Back up the database consistently, including WAL state, using SQLite backup tools.
-Do not place DB_PATH inside a publicly hosted asset directory.
+LOCAL ENVIRONMENT
+-----------------
+Copy .env.example to .env and use `python server.py`. Local development uses SQLite.
+The default database file is data/auth.sqlite and is excluded from Git.
 
-For production, set APP_ENV=production and APP_ORIGIN=https://your-domain.example,
-and terminate HTTPS at your hosting platform or reverse proxy. Production startup
-rejects a missing or non-HTTPS origin. HTTPS origins enable Secure cookies with
-the __Host- prefix. Use a production WSGI server (for example, install Gunicorn in a virtual
-environment and run `gunicorn --bind 0.0.0.0:8000 "server:create_app()"`).
-The bundled wsgiref server is for local development. Keep the SQLite database
-on persistent local disk; static hosting alone is insufficient. Changing the origin or cookie mode requires
-users to log in again. To stop locally, press Ctrl+C.
+PRODUCTION DEPLOYMENT
+---------------------
+The app is a Python WSGI service. Deploy the repository with its Dockerfile or
+Procfile and configure these secrets in the hosting platform (never commit them):
 
-Email verification, password recovery, and artwork listing/upload are not included.
-Registration does not verify ownership of an email address.
+APP_ENV=production
+APP_ORIGIN=https://your-domain.example
+PORT=<provided by host>
+DATABASE_URL=<Supabase PostgreSQL connection URI>
+APP_SECRET=<at least 32 random characters>
+BREVO_API_KEY=<Brevo API key>
+BREVO_SENDER_EMAIL=<verified Brevo sender address>
+BREVO_SENDER_NAME=Art House
 
-The Python backend retains the prior database schema, millisecond timestamps,
-scrypt parameters and session cookie names. Existing accounts and unexpired
-sessions remain valid when DB_PATH and APP_ORIGIN stay the same. Node.js and
-npm are not needed. Existing storefront JavaScript is only for shop interactions.
+In Supabase, open Project > Connect and copy the Session pooler connection URI
+(or use the direct URI when the host supports IPv6). Keep the database password
+URL-encoded. PostgreSQL connections require SSL. On startup, the app applies the
+numbered SQL migrations in migrations/ before accepting requests. Back up the
+Supabase database and keep its service credentials private.
+
+In Brevo, create an API key and verify the sender address/domain before deploying.
+The app uses Brevo's transactional email API to send one-time password reset codes.
+Reset codes expire after 10 minutes, allow five verification attempts, and are
+stored as keyed hashes. Account existence is not disclosed by the request endpoint.
+If mail delivery fails, the app logs the failure without logging the OTP or API key.
+
+Generate APP_SECRET with `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
+The host must terminate HTTPS and forward requests to the WSGI service. Production
+requires HTTPS APP_ORIGIN and sets Secure, HttpOnly, SameSite=Lax session cookies.
+Changing APP_ORIGIN or cookie mode requires users to log in again. Startup fails
+when required production configuration is missing.
+
+To migrate an existing local SQLite database, first configure DATABASE_URL and run:
+
+    python migrate_sqlite_to_supabase.py data/auth.sqlite
+
+The script copies accounts, credential hashes, profiles, listings, checkouts, and
+login records. Existing sessions and rate-limit counters are intentionally not
+copied; users must sign in again. Make a backup before migrating and run the import
+only once into an empty Supabase project.
+
+Checkout, payment verification, fulfillment, shipping, inventory reservations,
+and reporting are still not implemented. The current bag is a browser-side preview.
+
+The application keeps the existing scrypt parameters and SQLite development
+database behavior. Migrated PostgreSQL accounts keep their password hashes, but
+users must log in again after the move. `/healthz` is available for host health
+checks. Node.js and npm are not needed; storefront interactions use the bundled
+browser JavaScript.

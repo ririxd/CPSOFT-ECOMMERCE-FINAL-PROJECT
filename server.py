@@ -1,4 +1,4 @@
-"""Art House authentication: Python's sqlite3, hashlib and WSGI standard libraries."""
+"""Art House WSGI application with SQLite development and Supabase production storage."""
 import hashlib
 import hmac
 import html
@@ -13,10 +13,17 @@ import time
 from contextlib import closing
 from http import HTTPStatus
 from http.cookies import SimpleCookie, CookieError
+from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs, urlsplit
+from urllib.request import Request, urlopen
 from wsgiref.simple_server import make_server
 
 ROOT = Path(__file__).resolve().parent
+try:
+    from dotenv import load_dotenv
+    load_dotenv(ROOT / '.env')
+except ImportError:
+    pass
 SESSION_SECONDS = 7 * 24 * 60 * 60
 PUBLIC_FILES = {
     '/': 'text/html', '/index.html': 'text/html', '/styles.css': 'text/css',
@@ -24,7 +31,47 @@ PUBLIC_FILES = {
     **{'/js/' + name + '.js': 'text/javascript'
        for name in ('script', 'plugins', 'jquery-1.11.0.min')},
 }
-AUTH_PATHS = {'/api/auth/register', '/api/auth/login', '/api/auth/logout'}
+AUTH_PATHS = {'/api/auth/register', '/api/auth/login', '/api/auth/logout',
+              '/api/auth/password-reset/request', '/api/auth/password-reset/confirm'}
+
+
+class Database:
+    """Small DB-API bridge so local SQLite and hosted PostgreSQL share the app."""
+    def __init__(self, connection, postgres=False):
+        self.connection = connection
+        self.postgres = postgres
+        self.transaction_context = None
+
+    def execute(self, statement, parameters=()):
+        if self.postgres:
+            statement = statement.replace('?', '%s')
+        return self.connection.execute(statement, parameters)
+
+    def executescript(self, script):
+        if self.postgres:
+            for statement in script.split(';'):
+                if statement.strip():
+                    self.connection.execute(statement)
+        else:
+            self.connection.executescript(script)
+
+    def __enter__(self):
+        if self.postgres:
+            self.transaction_context = self.connection.transaction()
+            self.transaction_context.__enter__()
+        else:
+            self.connection.__enter__()
+        return self
+
+    def __exit__(self, exc_type, exc_value, traceback):
+        if self.postgres:
+            result = self.transaction_context.__exit__(exc_type, exc_value, traceback)
+            self.transaction_context = None
+            return result
+        return self.connection.__exit__(exc_type, exc_value, traceback)
+
+    def close(self):
+        self.connection.close()
 
 
 def digest(value):
@@ -35,6 +82,26 @@ def password_hash(password, salt):
     # Match the original scrypt parameters and ASCII hex salt to retain accounts.
     return hashlib.scrypt(password.encode('utf-8'), salt=salt.encode('ascii'),
                           n=16384, r=8, p=1, dklen=64).hex()
+
+
+def send_brevo_email(recipient, subject, text_content):
+    api_key = os.environ.get('BREVO_API_KEY', '')
+    sender_email = os.environ.get('BREVO_SENDER_EMAIL', '')
+    sender_name = os.environ.get('BREVO_SENDER_NAME', 'Art House')
+    if not api_key or not sender_email:
+        raise RuntimeError('Brevo transactional email is not configured.')
+    payload = json.dumps({
+        'sender': {'name': sender_name, 'email': sender_email},
+        'to': [{'email': recipient}],
+        'subject': subject,
+        'textContent': text_content,
+    }).encode('utf-8')
+    request = Request('https://api.brevo.com/v3/smtp/email', data=payload, method='POST',
+                      headers={'api-key': api_key, 'accept': 'application/json',
+                               'content-type': 'application/json'})
+    with urlopen(request, timeout=12) as response:
+        if response.status not in (200, 201, 202):
+            raise RuntimeError(f'Brevo returned HTTP {response.status}.')
 
 
 def now_ms():
@@ -48,7 +115,8 @@ class RequestError(Exception):
 
 
 class AuthApp:
-    def __init__(self, db_path=None, origin='http://localhost:8000', production=False):
+    def __init__(self, db_path=None, origin='http://localhost:8000', production=False,
+                 database_url=None):
         parsed = urlsplit(origin)
         if (parsed.scheme not in ('http', 'https') or not parsed.netloc
                 or parsed.username or parsed.password or parsed.path not in ('', '/')
@@ -59,11 +127,32 @@ class AuthApp:
         self.origin = origin.rstrip('/')
         self.secure = parsed.scheme == 'https'
         self.cookie_name = '__Host-art_house_session' if self.secure else 'art_house_session'
-        self.db_path = Path(db_path) if db_path else ROOT / 'data' / 'auth.sqlite'
-        self.db_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
+        self.app_secret = os.environ.get('APP_SECRET') or secrets.token_hex(32)
+        self.database_url = database_url or (None if db_path else
+                                             os.environ.get('DATABASE_URL') or os.environ.get('SUPABASE_DB_URL'))
+        self.postgres = bool(self.database_url)
+        if production and not self.postgres:
+            raise ValueError('Production requires DATABASE_URL for Supabase PostgreSQL.')
+        if not self.postgres:
+            self.db_path = Path(db_path) if db_path else ROOT / 'data' / 'auth.sqlite'
+            self.db_path.parent.mkdir(parents=True, exist_ok=True, mode=0o700)
         self.dummy_salt = secrets.token_hex(16)
         with closing(self.connect()) as db:
-            db.executescript('''
+            if self.postgres:
+                with db:
+                    db.execute('SELECT pg_advisory_xact_lock(734532968)')
+                    db.execute('''CREATE TABLE IF NOT EXISTS schema_migrations (
+                        version TEXT PRIMARY KEY, applied_at BIGINT NOT NULL)''')
+                    for migration_path in sorted((ROOT / 'migrations').glob('*.sql')):
+                        version = migration_path.name
+                        applied = db.execute('SELECT 1 FROM schema_migrations WHERE version = ?',
+                                             (version,)).fetchone()
+                        if not applied:
+                            db.executescript(migration_path.read_text(encoding='utf-8'))
+                            db.execute('INSERT INTO schema_migrations (version, applied_at) VALUES (?, ?)',
+                                       (version, now_ms()))
+            else:
+                db.executescript('''
                 PRAGMA journal_mode = WAL;
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY, username TEXT NOT NULL,
@@ -128,13 +217,28 @@ class AuthApp:
                 CREATE TABLE IF NOT EXISTS attempts (
                     key TEXT PRIMARY KEY, count INTEGER NOT NULL, expires INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS password_reset_codes (
+                    email TEXT PRIMARY KEY, code_hash TEXT NOT NULL,
+                    expires INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+                    created_at INTEGER NOT NULL
+                );
             ''')
 
     def connect(self):
-        db = sqlite3.connect(self.db_path, timeout=10)
-        db.row_factory = sqlite3.Row
-        db.execute('PRAGMA foreign_keys = ON')
-        return db
+        if self.postgres:
+            try:
+                import psycopg
+                from psycopg.rows import dict_row
+            except ImportError as error:
+                raise RuntimeError('Install requirements.txt to connect to Supabase PostgreSQL.') from error
+            connection = psycopg.connect(self.database_url, row_factory=dict_row,
+                                         sslmode=os.environ.get('PGSSLMODE', 'require'),
+                                         connect_timeout=10, autocommit=True)
+            return Database(connection, postgres=True)
+        connection = sqlite3.connect(self.db_path, timeout=10)
+        connection.row_factory = sqlite3.Row
+        connection.execute('PRAGMA foreign_keys = ON')
+        return Database(connection)
 
     def token(self, environ):
         cookies = SimpleCookie()
@@ -169,8 +273,12 @@ class AuthApp:
             db.execute('''INSERT INTO attempts VALUES (?, 1, ?)
                 ON CONFLICT(key) DO UPDATE SET count = count + 1''',
                        (key, now_ms() + 15 * 60 * 1000))
-            count = db.execute('SELECT count FROM attempts WHERE key = ?', (key,)).fetchone()[0]
+            count = db.execute('SELECT count FROM attempts WHERE key = ?', (key,)).fetchone()['count']
         return count > maximum
+
+    def reset_code_hash(self, email, code):
+        return hmac.new(self.app_secret.encode('utf-8'),
+                        f'{email}:{code}'.encode('utf-8'), hashlib.sha256).hexdigest()
 
     @staticmethod
     def render(filename, **values):
@@ -207,6 +315,8 @@ class AuthApp:
     def dispatch(self, environ, db):
         path = environ.get('PATH_INFO', '/')
         method = environ['REQUEST_METHOD']
+        if path == '/healthz' and method in ('GET', 'HEAD'):
+            return 200, {'status': 'ok'}, []
         if path == '/api/auth/me' and method in ('GET', 'HEAD'):
             user = self.user(db, environ)
             return (200, {'user': user}, []) if user else (401, {'error': 'Please log in.'}, [])
@@ -216,6 +326,58 @@ class AuthApp:
             if environ.get('HTTP_ORIGIN') != self.origin:
                 raise RequestError(403, 'Request origin is not allowed.')
             form = environ.get('CONTENT_TYPE', '').split(';')[0].strip() == 'application/x-www-form-urlencoded'
+            if path.endswith('/password-reset/request'):
+                data = self.read_body(environ, form)
+                email = data.get('email', '')
+                email = email.strip().lower() if isinstance(email, str) else ''
+                if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email) or len(email) > 254:
+                    raise RequestError(400, 'Enter a valid email address.')
+                if self.limited(db, 'reset:' + digest(email), 3):
+                    raise RequestError(429, 'Too many reset requests. Try again in 15 minutes.')
+                account = db.execute('SELECT id FROM users WHERE email = ?', (email,)).fetchone()
+                if account:
+                    code = f'{secrets.randbelow(1_000_000):06d}'
+                    with db:
+                        db.execute('''INSERT INTO password_reset_codes
+                            (email, code_hash, expires, attempts, created_at) VALUES (?, ?, ?, 0, ?)
+                            ON CONFLICT(email) DO UPDATE SET code_hash = excluded.code_hash,
+                            expires = excluded.expires, attempts = 0, created_at = excluded.created_at''',
+                                   (email, self.reset_code_hash(email, code), now_ms() + 10 * 60 * 1000, now_ms()))
+                    try:
+                        send_brevo_email(email, 'Your Art House password reset code',
+                                         f'Your password reset code is {code}. It expires in 10 minutes. If you did not request this, ignore this email.')
+                    except (RuntimeError, HTTPError, URLError, TimeoutError, OSError):
+                        logging.exception('Brevo password reset email could not be sent')
+                return 200, {'message': 'If an account uses that email, a reset code will be sent.'}, []
+            if path.endswith('/password-reset/confirm'):
+                data = self.read_body(environ, form)
+                email = data.get('email', '')
+                code = data.get('code', '')
+                password = data.get('password', '')
+                email = email.strip().lower() if isinstance(email, str) else ''
+                if (not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email) or len(email) > 254
+                        or not isinstance(code, str) or not re.fullmatch(r'\d{6}', code)
+                        or not isinstance(password, str) or not 12 <= len(password) <= 128):
+                    raise RequestError(400, 'Enter the email, six-digit code, and a 12–128 character password.')
+                reset = db.execute('SELECT * FROM password_reset_codes WHERE email = ?', (email,)).fetchone()
+                if (not reset or reset['expires'] <= now_ms() or reset['attempts'] >= 5
+                        or not hmac.compare_digest(self.reset_code_hash(email, code), reset['code_hash'])):
+                    with db:
+                        db.execute('UPDATE password_reset_codes SET attempts = attempts + 1 WHERE email = ?', (email,))
+                    raise RequestError(400, 'That reset code is invalid or expired.')
+                salt = secrets.token_hex(16)
+                hashed = password_hash(password, salt)
+                with db:
+                    user = db.execute('SELECT id FROM users WHERE email = ?', (email,)).fetchone()
+                    if not user:
+                        raise RequestError(400, 'That reset code is invalid or expired.')
+                    db.execute('UPDATE users SET salt = ?, password_hash = ? WHERE id = ?',
+                               (salt, hashed, user['id']))
+                    db.execute('''UPDATE account_credentials SET password_salt = ?, password_hash = ?
+                                  WHERE email = ?''', (salt, hashed, email))
+                    db.execute('DELETE FROM sessions WHERE user_id = ?', (user['id'],))
+                    db.execute('DELETE FROM password_reset_codes WHERE email = ?', (email,))
+                return 200, {'message': 'Password updated. You can now log in.'}, []
             if path.endswith('/logout'):
                 with db:
                     db.execute('DELETE FROM sessions WHERE token_hash = ?', (digest(self.token(environ)),))
@@ -242,17 +404,18 @@ class AuthApp:
                 hashed = password_hash(password, salt)
                 try:
                     with db:
-                        user_id = db.execute('INSERT INTO users (username, email, salt, password_hash) VALUES (?, ?, ?, ?)',
-                                             (username, email, salt, hashed)).lastrowid
-                        account_id = db.execute(
-                            "INSERT INTO registered_accounts (account_type) VALUES ('user')"
-                        ).lastrowid
+                        user_id = db.execute('''INSERT INTO users (username, email, salt, password_hash)
+                            VALUES (?, ?, ?, ?) RETURNING id''',
+                                             (username, email, salt, hashed)).fetchone()['id']
+                        account_id = db.execute("INSERT INTO registered_accounts (account_type) VALUES ('user') RETURNING id").fetchone()['id']
                         db.execute('''INSERT INTO account_credentials
                             (account_id, username, email, password_salt, password_hash)
                             VALUES (?, ?, ?, ?, ?)''',
                                    (account_id, username, email, salt, hashed))
                         headers = [self.issue_session(db, environ, user_id)]
-                except sqlite3.IntegrityError:
+                except Exception as error:
+                    if not isinstance(error, sqlite3.IntegrityError) and getattr(error, 'sqlstate', None) not in ('23505', '23503', '23514'):
+                        raise
                     raise RequestError(409, 'Unable to create this account. Try logging in or use another email.')
                 user = {'id': user_id, 'username': username, 'email': email}
             else:
@@ -264,7 +427,10 @@ class AuthApp:
                 user = {key: row[key] for key in ('id', 'username', 'email')}
                 with db:
                     headers = [self.issue_session(db, environ, user['id'])]
-            return (303, '', headers + [('Location', '/account.html')]) if form else (201 if registering else 200, {'user': user}, headers)
+            if form:
+                destination = '/account.html?welcome=1' if registering else '/account.html'
+                return 303, '', headers + [('Location', destination)]
+            return (201 if registering else 200, {'user': user}, headers)
         if method not in ('GET', 'HEAD'):
             raise RequestError(405, 'Method not allowed.')
         if path in ('/login.html', '/register.html'):
@@ -312,7 +478,17 @@ def create_app():
     origin = os.environ.get('APP_ORIGIN', f'http://localhost:{port}')
     if production and not os.environ.get('APP_ORIGIN'):
         raise ValueError('Production requires an explicit HTTPS APP_ORIGIN.')
-    return AuthApp(os.environ.get('DB_PATH'), origin, production)
+    if production:
+        missing = [name for name in ('APP_SECRET', 'BREVO_API_KEY', 'BREVO_SENDER_EMAIL')
+                   if not os.environ.get(name)]
+        if not (os.environ.get('DATABASE_URL') or os.environ.get('SUPABASE_DB_URL')):
+            missing.insert(0, 'DATABASE_URL')
+        if missing:
+            raise ValueError('Production configuration is missing: ' + ', '.join(missing))
+        if len(os.environ['APP_SECRET']) < 32:
+            raise ValueError('APP_SECRET must contain at least 32 characters.')
+    return AuthApp(os.environ.get('DB_PATH'), origin, production,
+                   os.environ.get('DATABASE_URL') or os.environ.get('SUPABASE_DB_URL'))
 
 
 if __name__ == '__main__':

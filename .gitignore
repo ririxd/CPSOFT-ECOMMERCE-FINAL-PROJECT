@@ -24,6 +24,8 @@ desktop.ini
 data/
 *.sqlite
 *.sqlite-*
+*.db
+*.db-*
 
 # Python runtime files
 __pycache__/

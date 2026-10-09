@@ -1,0 +1,11 @@
+.git
+.env
+.env.*
+!.env.example
+data/
+*.db
+*.sqlite
+*.sqlite-*
+__pycache__/
+*.py[cod]
+test/
