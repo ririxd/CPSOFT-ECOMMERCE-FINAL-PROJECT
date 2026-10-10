@@ -9,14 +9,14 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link href="https://fonts.googleapis.com/css2?family=DM+Sans:wght@400;500;600;700&family=Playfair+Display:ital,wght@0,500;0,600;0,700;1,500;1,600&display=swap" rel="stylesheet">
-    <link rel="stylesheet" href="styles.css?v=email-verification-20261010">
+    <link rel="stylesheet" href="/styles.css?v=auth-root-assets-20261010">
 </head>
-<body class="auth-page">
+<body class="auth-page verification-page">
     <div class="announcement">Your art deserves a home <span aria-hidden="true">✳</span> Meet your next chapter</div>
     <header class="site-header">
         <nav class="container auth-nav" aria-label="Main navigation">
-            <a class="navbar-brand" href="index.html" aria-label="Art House home">art<span>house</span><i>®</i></a>
-            <a class="auth-back" href="register.html">Back to registration <span aria-hidden="true">↗</span></a>
+            <a class="navbar-brand" href="/index.html" aria-label="Art House home">art<span>house</span><i>®</i></a>
+            <a class="auth-back" href="/register.html">Back to registration <span aria-hidden="true">↗</span></a>
         </nav>
     </header>
     <main class="container auth-layout">
@@ -42,7 +42,7 @@
                     <input id="verification-code" name="code" type="text" inputmode="numeric" pattern="[0-9]{6}" minlength="6" maxlength="6" autocomplete="one-time-code" placeholder="123456" required>
                 </div>
                 <button class="button-dark auth-submit" type="submit">Verify email <span aria-hidden="true">↗</span></button>
-                <p class="auth-status" id="verify-status" role="status" aria-live="polite"></p>
+                <p class="auth-status" id="verify-status" role="status" aria-live="polite">{{error}}</p>
             </form>
         </section>
     </main>

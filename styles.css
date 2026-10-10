@@ -1476,3 +1476,23 @@ body { margin:0; background:var(--ah-white); color:var(--ah-ink); font-family:"D
 .persona-choice strong { color: #242821; font-size: 13px; }
 .persona-choice small { color: #77796f; font-size: 11px; line-height: 1.45; }
 .persona-onboarding .auth-submit { margin-top: 0; }
+
+/* Keep server-rendered form errors visible on auth endpoints, too. */
+.auth-page .auth-status:not(:empty) {
+  margin: 16px 0 0;
+  padding: 12px 14px;
+  border-left: 3px solid var(--ah-rust);
+  background: #f7eee9;
+  color: #8c4732;
+  font-size: 13px;
+  line-height: 1.55;
+}
+
+/* Give the six-digit email code a clear, easy-to-scan input. */
+.verification-page #verification-code {
+  text-align: center;
+  font-size: 21px;
+  font-weight: 700;
+  letter-spacing: .32em;
+  font-variant-numeric: tabular-nums;
+}
