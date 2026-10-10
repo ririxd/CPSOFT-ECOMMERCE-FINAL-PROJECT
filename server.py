@@ -369,7 +369,13 @@ class AuthApp:
         if path in AUTH_PATHS:
             if method != 'POST':
                 raise RequestError(405, 'Use POST.')
-            if environ.get('HTTP_ORIGIN') != self.origin:
+            # Browser form submissions must be same-origin. On Vercel, users
+            # may access a deployment-specific hostname as well as APP_ORIGIN,
+            # so compare against the request's HTTPS host too.
+            request_host = environ.get('HTTP_HOST', '').strip()
+            request_scheme = 'https' if self.secure else environ.get('wsgi.url_scheme', 'http')
+            request_origin = f'{request_scheme}://{request_host}' if request_host else None
+            if environ.get('HTTP_ORIGIN') not in (self.origin, request_origin):
                 raise RequestError(403, 'Request origin is not allowed.')
             form = environ.get('CONTENT_TYPE', '').split(';')[0].strip() == 'application/x-www-form-urlencoded'
             if path == '/api/auth/register':
@@ -571,7 +577,11 @@ class AuthApp:
                 return 302, '', [('Location', '/login.html')]
             return 200, self.render('account.html', **{**user, 'persona': user.get('persona') or ''}), []
         if path in PUBLIC_FILES:
-            return 200, (ROOT / ('index.html' if path == '/' else path[1:])).read_bytes(), [('Content-Type', PUBLIC_FILES[path] + '; charset=utf-8')]
+            relative_path = 'index.html' if path == '/' else path.lstrip('/')
+            asset_path = ROOT / 'public' / relative_path
+            if not asset_path.is_file():
+                asset_path = ROOT / relative_path
+            return 200, asset_path.read_bytes(), [('Content-Type', PUBLIC_FILES[path] + '; charset=utf-8')]
         raise RequestError(404, 'Not found.')
 
     def __call__(self, environ, start_response):
