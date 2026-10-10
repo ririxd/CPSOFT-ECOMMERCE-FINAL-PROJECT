@@ -66,7 +66,8 @@ PUBLIC_FILES = {
        for name in ('script', 'plugins', 'jquery-1.11.0.min')},
 }
 AUTH_PATHS = {'/api/auth/register', '/api/auth/login', '/api/auth/logout',
-              '/api/auth/register/verify', '/api/auth/profile/persona',
+              '/api/auth/register/resend', '/api/auth/register/verify',
+              '/api/auth/profile/persona',
               '/api/auth/password-reset/request', '/api/auth/password-reset/confirm'}
 
 
@@ -448,17 +449,35 @@ class AuthApp:
                     if not isinstance(error, sqlite3.IntegrityError) and getattr(error, 'sqlstate', None) not in ('23505', '23503', '23514'):
                         raise
                     raise RequestError(409, 'That email or username is already awaiting verification.')
+                if form:
+                    return 303, '', [('Location', '/verify-email.html?email=' + quote(email, safe=''))]
+                return 202, {'message': 'Continue to email verification to request your code.',
+                             'verification_required': True,
+                             'email': email}, []
+            if path == '/api/auth/register/resend':
+                data = self.read_body(environ, form)
+                email = data.get('email', '')
+                email = email.strip().lower() if isinstance(email, str) else ''
+                if not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email) or len(email) > 254:
+                    raise RequestError(400, 'Enter a valid email address.')
+                if self.limited(db, 'register-resend-ip:' + environ.get('REMOTE_ADDR', ''), 10):
+                    raise RequestError(429, 'Too many verification email requests. Try again later.')
+                pending = db.execute('SELECT email FROM pending_registrations WHERE email = ?',
+                                     (email,)).fetchone()
+                if not pending:
+                    raise RequestError(400, 'Start registration again before requesting a verification email.')
+                code = f'{secrets.randbelow(1_000_000):06d}'
+                with db:
+                    db.execute('''UPDATE pending_registrations
+                                  SET code_hash = ?, expires = ?, attempts = 0
+                                  WHERE email = ?''',
+                               (self.reset_code_hash(email, code), now_ms() + 10 * 60 * 1000, email))
                 try:
                     deliver_otp_email(email, code, intent='Account Registration')
                 except EmailDeliveryError:
                     logging.exception('Brevo registration email could not be sent')
-                    with db:
-                        db.execute('DELETE FROM pending_registrations WHERE email = ?', (email,))
                     raise RequestError(503, 'We could not send a verification email. Please try again later.')
-                if form:
-                    return 303, '', [('Location', '/verify-email.html?email=' + quote(email, safe=''))]
-                return 202, {'message': 'Verification code sent.', 'verification_required': True,
-                             'email': email}, []
+                return 200, {'message': 'Verification email sent.'}, []
             if path == '/api/auth/register/verify':
                 data = self.read_body(environ, form)
                 email = data.get('email', '')
