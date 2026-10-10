@@ -91,9 +91,9 @@ PORT=<provided by host>
 DATABASE_URL=<Supabase PostgreSQL connection URI>
 APP_SECRET=<at least 32 random characters>
 BREVO_SMTP_HOST=smtp-relay.brevo.com
-BREVO_SMTP_PORT=587
+BREVO_SMTP_PORT=2525
 BREVO_SMTP_LOGIN=<Brevo SMTP login>
-BREVO_SMTP_KEY=<Brevo SMTP key>
+BREVO_SMTP_PASSWORD=<Brevo SMTP key/password>
 BREVO_SENDER_EMAIL=<verified Brevo sender address>
 BREVO_SENDER_NAME=Art House
 
@@ -104,8 +104,9 @@ numbered SQL migrations in migrations/ before accepting requests. Back up the
 Supabase database and keep its service credentials private.
 
 In Brevo, find the SMTP relay settings under Transactional > Settings > SMTP & API.
-Use the SMTP login and SMTP key (not an API key), and verify the sender address/domain
-before deploying. The app connects to Brevo's SMTP relay using STARTTLS to send
+Use the SMTP login and SMTP key (not an API key), placing the SMTP key in
+BREVO_SMTP_PASSWORD, and verify the sender address/domain before deploying. The
+app connects to Brevo's SMTP relay on port 2525 using STARTTLS to send
 one-time password reset codes.
 Reset codes expire after 10 minutes, allow five verification attempts, and are
 stored as keyed hashes. Account existence is not disclosed by the request endpoint.

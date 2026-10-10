@@ -42,6 +42,7 @@
                         <label class="persona-choice"><input type="radio" name="persona" value="gallery-professional" required><span><strong>Gallery or art professional</strong><small>I work with artists, exhibitions, or the art trade.</small></span></label>
                     </fieldset>
                     <button class="button-dark auth-submit" type="submit">Continue <span aria-hidden="true">↗</span></button>
+                    <p class="auth-status" id="persona-status" role="status" aria-live="polite"></p>
                 </form>
             </section>
             <p class="eyebrow">Your house-artist account</p>
@@ -54,15 +55,33 @@
     <footer class="auth-footer">Independent art. Shared with the world. <span aria-hidden="true">✳</span> Art House</footer>
     <script>
         const onboarding = document.getElementById('persona-onboarding');
-        if (new URLSearchParams(window.location.search).get('welcome') === '1') {
+        const savedPersona = '{{persona}}';
+        if (new URLSearchParams(window.location.search).get('welcome') === '1' || !savedPersona) {
             onboarding.hidden = false;
         }
-        document.getElementById('persona-form').addEventListener('submit', event => {
+        document.getElementById('persona-form').addEventListener('submit', async event => {
             event.preventDefault();
             const selected = new FormData(event.currentTarget).get('persona');
-            if (selected) localStorage.setItem('art-house-persona', selected);
-            onboarding.hidden = true;
-            history.replaceState(null, '', window.location.pathname);
+            const status = document.getElementById('persona-status');
+            const button = event.currentTarget.querySelector('button[type="submit"]');
+            if (!selected) return;
+            button.disabled = true;
+            status.textContent = 'Saving your preference…';
+            try {
+                const response = await fetch('/api/auth/profile/persona', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    body: JSON.stringify({persona: selected})
+                });
+                const result = await response.json();
+                if (!response.ok) throw new Error(result.error || 'Could not save your choice.');
+                onboarding.hidden = true;
+                history.replaceState(null, '', window.location.pathname);
+            } catch (error) {
+                status.textContent = error.message;
+            } finally {
+                button.disabled = false;
+            }
         });
     </script>
 </body>

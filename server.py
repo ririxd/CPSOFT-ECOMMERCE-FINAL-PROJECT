@@ -4,7 +4,7 @@ import hmac
 import html
 import json
 import logging
-from email.message import EmailMessage
+from email.mime.text import MIMEText
 import os
 from pathlib import Path
 import re
@@ -16,7 +16,7 @@ import time
 from contextlib import closing
 from http import HTTPStatus
 from http.cookies import SimpleCookie, CookieError
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 from wsgiref.simple_server import make_server
 
 ROOT = Path(__file__).resolve().parent
@@ -45,6 +45,15 @@ def load_env_file(path):
 
 
 load_env_file(ROOT / '.env')
+# Brevo SMTP settings follow the lab's configuration format. Keep credentials in
+# environment variables instead of putting them in source control.
+SMTP_SERVER = os.environ.get('BREVO_SMTP_HOST', 'smtp-relay.brevo.com')
+SMTP_PORT = int(os.environ.get('BREVO_SMTP_PORT', '2525'))
+SMTP_LOGIN = os.environ.get('BREVO_SMTP_LOGIN', '')
+SMTP_PASSWORD = (os.environ.get('BREVO_SMTP_PASSWORD')
+                 or os.environ.get('BREVO_SMTP_KEY', ''))
+SMTP_SENDER_EMAIL = os.environ.get('BREVO_SENDER_EMAIL', '')
+SMTP_SENDER_NAME = os.environ.get('BREVO_SENDER_NAME', 'Art House')
 SESSION_SECONDS = 7 * 24 * 60 * 60
 PUBLIC_FILES = {
     '/': 'text/html', '/index.html': 'text/html', '/styles.css': 'text/css',
@@ -53,6 +62,7 @@ PUBLIC_FILES = {
        for name in ('script', 'plugins', 'jquery-1.11.0.min')},
 }
 AUTH_PATHS = {'/api/auth/register', '/api/auth/login', '/api/auth/logout',
+              '/api/auth/register/verify', '/api/auth/profile/persona',
               '/api/auth/password-reset/request', '/api/auth/password-reset/confirm'}
 
 
@@ -105,27 +115,24 @@ def password_hash(password, salt):
                           n=16384, r=8, p=1, dklen=64).hex()
 
 
-def send_brevo_email(recipient, subject, text_content):
-    smtp_login = os.environ.get('BREVO_SMTP_LOGIN', '')
-    smtp_key = os.environ.get('BREVO_SMTP_KEY', '')
-    smtp_host = os.environ.get('BREVO_SMTP_HOST', 'smtp-relay.brevo.com')
-    smtp_port = int(os.environ.get('BREVO_SMTP_PORT', '587'))
-    sender_email = os.environ.get('BREVO_SENDER_EMAIL', '')
-    sender_name = os.environ.get('BREVO_SENDER_NAME', 'Art House')
-    if not smtp_login or not smtp_key or not sender_email:
+def send_otp_email(receiver_email, otp, intent):
+    """Send a one-time code through Brevo SMTP using the lab's flow."""
+    if not SMTP_LOGIN or not SMTP_PASSWORD or not SMTP_SENDER_EMAIL:
         raise RuntimeError('Brevo transactional email is not configured.')
-    message = EmailMessage()
-    message['From'] = f'{sender_name} <{sender_email}>'
-    message['To'] = recipient
-    message['Subject'] = subject
-    message.set_content(text_content)
-    context = ssl.create_default_context()
-    with smtplib.SMTP(smtp_host, smtp_port, timeout=12) as smtp:
+    message = MIMEText(
+        f'Your {intent} One-Time Password (OTP) is: {otp}\n\n'
+        'Please enter this code to proceed. Do not share this code with anyone.'
+    )
+    message['Subject'] = f'Art House - {intent} OTP'
+    message['From'] = f'{SMTP_SENDER_NAME} <{SMTP_SENDER_EMAIL}>'
+    message['To'] = receiver_email
+    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=12) as smtp:
         smtp.ehlo()
-        smtp.starttls(context=context)
+        smtp.starttls(context=ssl.create_default_context())
         smtp.ehlo()
-        smtp.login(smtp_login, smtp_key)
+        smtp.login(SMTP_LOGIN, SMTP_PASSWORD)
         smtp.send_message(message)
+    return True
 
 
 def now_ms():
@@ -180,7 +187,9 @@ class AuthApp:
                 PRAGMA journal_mode = WAL;
                 CREATE TABLE IF NOT EXISTS users (
                     id INTEGER PRIMARY KEY, username TEXT NOT NULL,
-                    email TEXT NOT NULL UNIQUE, salt TEXT NOT NULL, password_hash TEXT NOT NULL
+                    email TEXT NOT NULL UNIQUE, salt TEXT NOT NULL, password_hash TEXT NOT NULL,
+                    persona TEXT CHECK (persona IS NULL OR persona IN
+                        ('artist', 'collector', 'enthusiast', 'interior-designer', 'gallery-professional'))
                 );
                 -- Registered account identity is separate from role-specific profiles
                 -- and credential material. Existing users remain the auth compatibility table.
@@ -246,7 +255,18 @@ class AuthApp:
                     expires INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
                     created_at INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS pending_registrations (
+                    email TEXT PRIMARY KEY, username TEXT NOT NULL UNIQUE,
+                    salt TEXT NOT NULL, password_hash TEXT NOT NULL, code_hash TEXT NOT NULL,
+                    expires INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
+                    created_at INTEGER NOT NULL
+                );
             ''')
+                user_columns = {row['name'] for row in db.execute('PRAGMA table_info(users)').fetchall()}
+                if 'persona' not in user_columns:
+                    db.execute("""ALTER TABLE users ADD COLUMN persona TEXT CHECK
+                        (persona IS NULL OR persona IN
+                        ('artist', 'collector', 'enthusiast', 'interior-designer', 'gallery-professional'))""")
 
     def connect(self):
         if self.postgres:
@@ -277,7 +297,7 @@ class AuthApp:
                 + ('; Secure' if self.secure else ''))
 
     def user(self, db, environ):
-        row = db.execute('''SELECT users.id, users.username, users.email FROM sessions
+        row = db.execute('''SELECT users.id, users.username, users.email, users.persona FROM sessions
             JOIN users ON users.id = sessions.user_id WHERE token_hash = ? AND expires > ?''',
                          (digest(self.token(environ)), now_ms())).fetchone()
         return dict(row) if row else None
@@ -350,6 +370,111 @@ class AuthApp:
             if environ.get('HTTP_ORIGIN') != self.origin:
                 raise RequestError(403, 'Request origin is not allowed.')
             form = environ.get('CONTENT_TYPE', '').split(';')[0].strip() == 'application/x-www-form-urlencoded'
+            if path == '/api/auth/register':
+                data = self.read_body(environ, form)
+                email = data.get('email', '')
+                username = data.get('username', '')
+                password = data.get('password', '')
+                email = email.strip().lower() if isinstance(email, str) else ''
+                username = username.strip() if isinstance(username, str) else ''
+                if (not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email) or len(email) > 254
+                        or not re.fullmatch(r'[A-Za-z0-9_-]{3,30}', username)
+                        or not isinstance(password, str) or not 12 <= len(password) <= 128):
+                    raise RequestError(400, 'Use a valid email, username, and a 12–128 character password.')
+                if (self.limited(db, 'register-ip:' + environ.get('REMOTE_ADDR', ''), 30)
+                        or self.limited(db, 'register-email:' + digest(email), 3)):
+                    raise RequestError(429, 'Too many registration attempts. Try again in 15 minutes.')
+                existing = db.execute('SELECT 1 FROM users WHERE email = ? OR username = ?',
+                                      (email, username)).fetchone()
+                if existing:
+                    raise RequestError(409, 'That email or username is already registered.')
+                code = f'{secrets.randbelow(1_000_000):06d}'
+                salt = secrets.token_hex(16)
+                hashed = password_hash(password, salt)
+                try:
+                    with db:
+                        db.execute('''INSERT INTO pending_registrations
+                            (email, username, salt, password_hash, code_hash, expires, attempts, created_at)
+                            VALUES (?, ?, ?, ?, ?, ?, 0, ?)
+                            ON CONFLICT(email) DO UPDATE SET username = excluded.username,
+                            salt = excluded.salt, password_hash = excluded.password_hash,
+                            code_hash = excluded.code_hash, expires = excluded.expires,
+                            attempts = 0, created_at = excluded.created_at''',
+                                   (email, username, salt, hashed, self.reset_code_hash(email, code),
+                                    now_ms() + 10 * 60 * 1000, now_ms()))
+                except Exception as error:
+                    if not isinstance(error, sqlite3.IntegrityError) and getattr(error, 'sqlstate', None) not in ('23505', '23503', '23514'):
+                        raise
+                    raise RequestError(409, 'That email or username is already awaiting verification.')
+                try:
+                    send_otp_email(email, code, intent='Account Registration')
+                except (RuntimeError, ValueError, smtplib.SMTPException, OSError):
+                    logging.exception('Brevo registration email could not be sent')
+                    with db:
+                        db.execute('DELETE FROM pending_registrations WHERE email = ?', (email,))
+                    raise RequestError(503, 'We could not send a verification email. Please try again later.')
+                if form:
+                    return 303, '', [('Location', '/verify-email.html?email=' + quote(email, safe=''))]
+                return 202, {'message': 'Verification code sent.', 'verification_required': True,
+                             'email': email}, []
+            if path == '/api/auth/register/verify':
+                data = self.read_body(environ, form)
+                email = data.get('email', '')
+                code = data.get('code', '')
+                email = email.strip().lower() if isinstance(email, str) else ''
+                if (not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email) or len(email) > 254
+                        or not isinstance(code, str) or not re.fullmatch(r'\d{6}', code)):
+                    raise RequestError(400, 'Enter a valid email and six-digit verification code.')
+                if self.limited(db, 'verify-ip:' + environ.get('REMOTE_ADDR', ''), 30):
+                    raise RequestError(429, 'Too many verification attempts. Try again later.')
+                pending = db.execute('SELECT * FROM pending_registrations WHERE email = ?', (email,)).fetchone()
+                if not pending or pending['expires'] <= now_ms() or pending['attempts'] >= 5:
+                    if pending:
+                        with db:
+                            db.execute('DELETE FROM pending_registrations WHERE email = ?', (email,))
+                    raise RequestError(400, 'That verification code is invalid or expired. Start registration again.')
+                if not hmac.compare_digest(self.reset_code_hash(email, code), pending['code_hash']):
+                    with db:
+                        db.execute('UPDATE pending_registrations SET attempts = attempts + 1 WHERE email = ?',
+                                   (email,))
+                    raise RequestError(400, 'That verification code is invalid or expired.')
+                try:
+                    with db:
+                        user_id = db.execute('''INSERT INTO users (username, email, salt, password_hash)
+                            VALUES (?, ?, ?, ?) RETURNING id''',
+                                             (pending['username'], email, pending['salt'],
+                                              pending['password_hash'])).fetchone()['id']
+                        account_id = db.execute("INSERT INTO registered_accounts (account_type) VALUES ('user') RETURNING id").fetchone()['id']
+                        db.execute('''INSERT INTO account_credentials
+                            (account_id, username, email, password_salt, password_hash)
+                            VALUES (?, ?, ?, ?, ?)''',
+                                   (account_id, pending['username'], email, pending['salt'],
+                                    pending['password_hash']))
+                        db.execute('DELETE FROM pending_registrations WHERE email = ?', (email,))
+                        headers = [self.issue_session(db, environ, user_id)]
+                except Exception as error:
+                    if not isinstance(error, sqlite3.IntegrityError) and getattr(error, 'sqlstate', None) not in ('23505', '23503', '23514'):
+                        raise
+                    raise RequestError(409, 'That email or username is already registered. Please log in.')
+                user = {'id': user_id, 'username': pending['username'], 'email': email, 'persona': None}
+                if form:
+                    return 303, '', headers + [('Location', '/account.html?welcome=1')]
+                return 201, {'user': user, 'redirect': '/account.html?welcome=1'}, headers
+            if path == '/api/auth/profile/persona':
+                user = self.user(db, environ)
+                if not user:
+                    raise RequestError(401, 'Please log in to finish setting up your account.')
+                data = self.read_body(environ, form)
+                persona = data.get('persona', '')
+                allowed_personas = {'artist', 'collector', 'enthusiast',
+                                    'interior-designer', 'gallery-professional'}
+                if not isinstance(persona, str) or persona not in allowed_personas:
+                    raise RequestError(400, 'Choose one of the listed art-market roles.')
+                with db:
+                    db.execute('UPDATE users SET persona = ? WHERE id = ?', (persona, user['id']))
+                if form:
+                    return 303, '', [('Location', '/account.html')]
+                return 200, {'message': 'Your Art House profile is ready.', 'persona': persona}, []
             if path.endswith('/password-reset/request'):
                 data = self.read_body(environ, form)
                 email = data.get('email', '')
@@ -368,8 +493,7 @@ class AuthApp:
                             expires = excluded.expires, attempts = 0, created_at = excluded.created_at''',
                                    (email, self.reset_code_hash(email, code), now_ms() + 10 * 60 * 1000, now_ms()))
                     try:
-                        send_brevo_email(email, 'Your Art House password reset code',
-                                         f'Your password reset code is {code}. It expires in 10 minutes. If you did not request this, ignore this email.')
+                        send_otp_email(email, code, intent='Password Reset')
                     except (RuntimeError, ValueError, smtplib.SMTPException, OSError):
                         logging.exception('Brevo password reset email could not be sent')
                 return 200, {'message': 'If an account uses that email, a reset code will be sent.'}, []
@@ -415,55 +539,35 @@ class AuthApp:
             username = data.get('username', '')
             email = email.strip().lower() if isinstance(email, str) else ''
             username = username.strip() if isinstance(username, str) else ''
-            registering = path.endswith('/register')
             if (not re.fullmatch(r'[^\s@]+@[^\s@]+\.[^\s@]+', email) or len(email) > 254
                     or not isinstance(password, str) or not 1 <= len(password) <= 128
-                    or (registering and (len(password) < 12 or not re.fullmatch(r'[A-Za-z0-9_-]{3,30}', username)))):
-                raise RequestError(400, 'Use a valid email, a 3–30 character username (letters, numbers, _ or -), and a 12–128 character password.'
-                                   if registering else 'Enter a valid email and password.')
+                    ):
+                raise RequestError(400, 'Enter a valid email and password.')
             if self.limited(db, 'email:' + digest(email), 10):
                 raise RequestError(429, 'Too many attempts. Please try again in 15 minutes.')
-            if registering:
-                salt = secrets.token_hex(16)
-                hashed = password_hash(password, salt)
-                try:
-                    with db:
-                        user_id = db.execute('''INSERT INTO users (username, email, salt, password_hash)
-                            VALUES (?, ?, ?, ?) RETURNING id''',
-                                             (username, email, salt, hashed)).fetchone()['id']
-                        account_id = db.execute("INSERT INTO registered_accounts (account_type) VALUES ('user') RETURNING id").fetchone()['id']
-                        db.execute('''INSERT INTO account_credentials
-                            (account_id, username, email, password_salt, password_hash)
-                            VALUES (?, ?, ?, ?, ?)''',
-                                   (account_id, username, email, salt, hashed))
-                        headers = [self.issue_session(db, environ, user_id)]
-                except Exception as error:
-                    if not isinstance(error, sqlite3.IntegrityError) and getattr(error, 'sqlstate', None) not in ('23505', '23503', '23514'):
-                        raise
-                    raise RequestError(409, 'Unable to create this account. Try logging in or use another email.')
-                user = {'id': user_id, 'username': username, 'email': email}
-            else:
-                row = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
-                candidate = password_hash(password, row['salt'] if row else self.dummy_salt)
-                matches = hmac.compare_digest(candidate, row['password_hash'] if row else '0' * 128)
-                if not row or not matches:
-                    raise RequestError(401, 'Email or password is incorrect.')
-                user = {key: row[key] for key in ('id', 'username', 'email')}
-                with db:
-                    headers = [self.issue_session(db, environ, user['id'])]
+            row = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
+            candidate = password_hash(password, row['salt'] if row else self.dummy_salt)
+            matches = hmac.compare_digest(candidate, row['password_hash'] if row else '0' * 128)
+            if not row or not matches:
+                raise RequestError(401, 'Email or password is incorrect.')
+            user = {key: row[key] for key in ('id', 'username', 'email', 'persona')}
+            with db:
+                headers = [self.issue_session(db, environ, user['id'])]
             if form:
-                destination = '/account.html?welcome=1' if registering else '/account.html'
-                return 303, '', headers + [('Location', destination)]
-            return (201 if registering else 200, {'user': user}, headers)
+                return 303, '', headers + [('Location', '/account.html')]
+            return 200, {'user': user}, headers
         if method not in ('GET', 'HEAD'):
             raise RequestError(405, 'Method not allowed.')
         if path in ('/login.html', '/register.html'):
             return 200, self.render(path[1:]), []
+        if path == '/verify-email.html':
+            email = parse_qs(environ.get('QUERY_STRING', '')).get('email', [''])[0]
+            return 200, self.render('verify-email.html', email=email, error=''), []
         if path == '/account.html':
             user = self.user(db, environ)
             if not user:
                 return 302, '', [('Location', '/login.html')]
-            return 200, self.render('account.html', **user), []
+            return 200, self.render('account.html', **{**user, 'persona': user.get('persona') or ''}), []
         if path in PUBLIC_FILES:
             return 200, (ROOT / ('index.html' if path == '/' else path[1:])).read_bytes(), [('Content-Type', PUBLIC_FILES[path] + '; charset=utf-8')]
         raise RequestError(404, 'Not found.')
@@ -479,7 +583,10 @@ class AuthApp:
             path = environ.get('PATH_INFO', '')
             if (environ.get('CONTENT_TYPE', '').split(';')[0].strip() == 'application/x-www-form-urlencoded'
                     and path in AUTH_PATHS):
-                body = self.render('register.html' if path.endswith('/register') else 'login.html', error=error.message)
+                if path == '/api/auth/register':
+                    body = self.render('register.html', error=error.message)
+                elif path == '/api/auth/register/verify':
+                    body = self.render('verify-email.html', email='', error=error.message)
         except Exception:
             logging.exception('Authentication request failed')
             status, body, headers = 500, {'error': 'Something went wrong. Please try again.'}, []
@@ -503,9 +610,10 @@ def create_app():
     if production and not os.environ.get('APP_ORIGIN'):
         raise ValueError('Production requires an explicit HTTPS APP_ORIGIN.')
     if production:
-        missing = [name for name in ('APP_SECRET', 'BREVO_SMTP_LOGIN', 'BREVO_SMTP_KEY',
-                                     'BREVO_SENDER_EMAIL')
+        missing = [name for name in ('APP_SECRET', 'BREVO_SMTP_LOGIN', 'BREVO_SENDER_EMAIL')
                    if not os.environ.get(name)]
+        if not (os.environ.get('BREVO_SMTP_PASSWORD') or os.environ.get('BREVO_SMTP_KEY')):
+            missing.append('BREVO_SMTP_PASSWORD')
         if not (os.environ.get('DATABASE_URL') or os.environ.get('SUPABASE_DB_URL')):
             missing.insert(0, 'DATABASE_URL')
         if missing:

@@ -43,7 +43,7 @@
                 <div class="auth-field"><label for="email">Email</label><input id="email" name="email" type="email" maxlength="254" autocomplete="email" required></div>
                 <div class="auth-field"><label for="password">Password</label><input id="password" name="password" type="password" maxlength="128" autocomplete="new-password" minlength="12" aria-describedby="password-help" required><small id="password-help">Use 12–128 characters.</small></div>
                 <button class="button-dark auth-submit" type="submit">Create an account <span aria-hidden="true">↗</span></button>
-                <p class="auth-status" role="status" aria-live="polite"></p>
+                <p class="auth-status" role="status" aria-live="polite">{{error}}</p>
             </form>
         </section>
     </main>
