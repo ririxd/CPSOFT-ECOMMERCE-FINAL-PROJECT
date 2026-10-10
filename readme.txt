@@ -118,7 +118,8 @@ Import the repository with the project root as Root Directory. The Python WSGI
 entrypoint is `server:app` (configured in pyproject.toml), so Vercel routes page
 requests and `/api/*` requests through the app. Use the Other framework preset if
 Vercel does not detect Python automatically; no Node build command or output
-directory is needed. `vercel.json` sets the function duration.
+directory is needed. The minimal `vercel.json` only declares the Vercel schema;
+the Python entrypoint is configured in `pyproject.toml`.
 
 Add the production secrets under Project Settings > Environment Variables, then
 redeploy. Set APP_ENV=production, APP_SECRET, DATABASE_URL, BREVO_SMTP_LOGIN,
