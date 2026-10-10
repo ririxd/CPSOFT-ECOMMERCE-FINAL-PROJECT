@@ -59,10 +59,10 @@
             try {
                 const response = await fetch('/api/auth/register/resend', {
                     method: 'POST',
-                    headers: {'Content-Type': 'application/json'},
-                    body: JSON.stringify({email: emailInput.value.trim()})
+                    headers: {'Content-Type': 'application/x-www-form-urlencoded'},
+                    body: new URLSearchParams({email: emailInput.value.trim()})
                 });
-                const result = await response.json();
+                const result = await response.json().catch(() => ({}));
                 if (!response.ok) throw new Error(result.error || 'Unable to send the verification email.');
                 sendStatus.textContent = result.message;
             } catch (error) {
