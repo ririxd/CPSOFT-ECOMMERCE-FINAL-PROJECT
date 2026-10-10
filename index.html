@@ -15,7 +15,6 @@
 </head>
 <body>
     <svg xmlns="http://www.w3.org/2000/svg" class="icon-definitions" aria-hidden="true">
-        <symbol id="icon-search" viewBox="0 0 24 24"><circle cx="10.8" cy="10.8" r="6.8"/><path d="m16 16 5 5"/></symbol>
         <symbol id="icon-bag" viewBox="0 0 24 24"><path d="M4 8h16l-1 13H5L4 8Z"/><path d="M9 9V6a3 3 0 0 1 6 0v3"/></symbol>
         <symbol id="icon-arrow" viewBox="0 0 24 24"><path d="M4 12h15m-6-6 6 6-6 6"/></symbol>
     </svg>
@@ -34,25 +33,10 @@
                         <li class="nav-item"><a class="nav-link nav-link-ltr" href="login.html">Our artists</a></li>
                         <li class="nav-item"><button class="nav-link nav-link-ltr story-trigger" type="button" aria-controls="story-modal" aria-haspopup="dialog">Our story</button></li>
                     </ul>
-                    <div class="nav-tools">
-                        <button class="icon-button search-button" type="button" aria-label="Search artworks"><svg><use href="#icon-search"/></svg></button>
-                    </div>
                 </div>
             </div>
         </nav>
     </header>
-
-    <div class="search-popup" role="dialog" aria-modal="true" aria-label="Search artworks">
-        <div class="search-popup-container">
-            <button type="button" class="search-popup-close" aria-label="Close search">×</button>
-            <p class="eyebrow">Find something you love</p>
-            <form class="search-form" role="search" action="#shop">
-                <input type="search" id="search-form" class="form-control" placeholder="Try ‘blue’, ‘prints’ or an artist" name="s">
-                <button type="submit" aria-label="Submit search"><svg><use href="#icon-search"/></svg></button>
-            </form>
-            <div class="search-suggestions"><span>Popular:</span> Abstract · Prints · Under $100</div>
-        </div>
-    </div>
 
     <div class="story-modal" id="story-modal" role="dialog" aria-modal="true" aria-labelledby="story-modal-title" hidden>
         <div class="story-modal-backdrop" data-story-close></div>
@@ -151,14 +135,8 @@
           chip.addEventListener('click', function () {
             activeFilter = chip.dataset.filter;
             chips.forEach(function (item) { item.classList.toggle('active', item === chip); });
-            filterArt(document.querySelector('#search-form').value);
+            filterArt('');
           });
-        });
-        document.querySelector('.search-form').addEventListener('submit', function (event) {
-          event.preventDefault();
-          filterArt(document.querySelector('#search-form').value);
-          document.querySelector('.search-popup').classList.remove('is-visible');
-          document.querySelector('#shop').scrollIntoView({ behavior: 'smooth' });
         });
         document.querySelector('.newsletter-form').addEventListener('submit', function (event) {
           event.preventDefault();
