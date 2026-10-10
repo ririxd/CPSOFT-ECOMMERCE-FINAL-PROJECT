@@ -2,7 +2,7 @@
 name = "art-house-cpsoft"
 version = "0.1.0"
 requires-python = ">=3.12"
-dependencies = ["psycopg[binary]>=3.2,<4"]
+dependencies = ["Flask>=3.0,<4", "psycopg[binary]>=3.2,<4"]
 
 [tool.vercel]
 entrypoint = "server:app"

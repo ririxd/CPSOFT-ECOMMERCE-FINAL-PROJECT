@@ -18,6 +18,8 @@ from http import HTTPStatus
 from http.cookies import SimpleCookie, CookieError
 from urllib.parse import parse_qs, quote, urlsplit
 from wsgiref.simple_server import make_server
+from flask import Flask, request
+from werkzeug.wrappers import Response
 
 ROOT = Path(__file__).resolve().parent
 
@@ -628,15 +630,25 @@ def create_app():
                    os.environ.get('DATABASE_URL') or os.environ.get('SUPABASE_DB_URL'))
 
 
-_vercel_app = None
+_vercel_wsgi_app = None
 
 
-def app(environ, start_response):
-    """Lazy WSGI entrypoint detected by Vercel's Python runtime."""
-    global _vercel_app
-    if _vercel_app is None:
-        _vercel_app = create_app()
-    return _vercel_app(environ, start_response)
+def get_vercel_wsgi_app():
+    """Build the existing WSGI app on first request in a Vercel instance."""
+    global _vercel_wsgi_app
+    if _vercel_wsgi_app is None:
+        _vercel_wsgi_app = create_app()
+    return _vercel_wsgi_app
+
+
+app = Flask(__name__, static_folder=None)
+
+
+@app.route('/', defaults={'path': ''}, methods=['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
+@app.route('/<path:path>', methods=['GET', 'HEAD', 'POST', 'PUT', 'PATCH', 'DELETE', 'OPTIONS'])
+def vercel_dispatch(path):
+    """Route every Vercel request through the app's existing WSGI handler."""
+    return Response.from_app(get_vercel_wsgi_app(), request.environ)
 
 
 if __name__ == '__main__':

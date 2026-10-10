@@ -115,11 +115,11 @@ If mail delivery fails, the app logs the failure without logging the OTP or SMTP
 VERCEL
 ------
 Import the repository with the project root as Root Directory. The Python WSGI
-entrypoint is `server:app` (configured in pyproject.toml), so Vercel routes page
-requests and `/api/*` requests through the app. Use the Other framework preset if
-Vercel does not detect Python automatically; no Node build command or output
-directory is needed. The minimal `vercel.json` only declares the Vercel schema;
-the Python entrypoint is configured in `pyproject.toml`.
+entrypoint is `server:app` (configured in pyproject.toml). The Flask adapter
+routes all page and API requests through the existing WSGI app. Set Vercel's
+Framework Preset to Flask if it does not detect Flask automatically. No Node
+build command or output directory is needed. The minimal `vercel.json` only
+declares the Vercel schema.
 
 Add the production secrets under Project Settings > Environment Variables, then
 redeploy. Set APP_ENV=production, APP_SECRET, DATABASE_URL, BREVO_SMTP_LOGIN,
