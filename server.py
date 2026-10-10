@@ -605,10 +605,14 @@ class AuthApp:
 
 def create_app():
     port = int(os.environ.get('PORT', '8000'))
-    production = os.environ.get('APP_ENV') == 'production'
-    origin = os.environ.get('APP_ORIGIN', f'http://localhost:{port}')
-    if production and not os.environ.get('APP_ORIGIN'):
-        raise ValueError('Production requires an explicit HTTPS APP_ORIGIN.')
+    on_vercel = os.environ.get('VERCEL') == '1'
+    production = os.environ.get('APP_ENV') == 'production' or on_vercel
+    vercel_url = os.environ.get('VERCEL_URL', '').strip()
+    default_origin = f'https://{vercel_url}' if on_vercel and vercel_url else f'http://localhost:{port}'
+    configured_origin = os.environ.get('APP_ORIGIN', '').strip()
+    origin = configured_origin or default_origin
+    if production and not configured_origin and not (on_vercel and vercel_url):
+        raise ValueError('Production requires APP_ORIGIN or VERCEL_URL.')
     if production:
         missing = [name for name in ('APP_SECRET', 'BREVO_SMTP_LOGIN', 'BREVO_SENDER_EMAIL')
                    if not os.environ.get(name)]
@@ -624,8 +628,19 @@ def create_app():
                    os.environ.get('DATABASE_URL') or os.environ.get('SUPABASE_DB_URL'))
 
 
+_vercel_app = None
+
+
+def app(environ, start_response):
+    """Lazy WSGI entrypoint detected by Vercel's Python runtime."""
+    global _vercel_app
+    if _vercel_app is None:
+        _vercel_app = create_app()
+    return _vercel_app(environ, start_response)
+
+
 if __name__ == '__main__':
-    app = create_app()
-    with make_server('0.0.0.0', int(os.environ.get('PORT', '8000')), app) as server:
-        print(f'Art House is listening at {app.origin}', flush=True)
+    local_app = create_app()
+    with make_server('0.0.0.0', int(os.environ.get('PORT', '8000')), local_app) as server:
+        print(f'Art House is listening at {local_app.origin}', flush=True)
         server.serve_forever()

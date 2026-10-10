@@ -112,6 +112,31 @@ Reset codes expire after 10 minutes, allow five verification attempts, and are
 stored as keyed hashes. Account existence is not disclosed by the request endpoint.
 If mail delivery fails, the app logs the failure without logging the OTP or SMTP credentials.
 
+VERCEL
+------
+Import the repository with the project root as Root Directory. The Python WSGI
+entrypoint is `server:app` (configured in pyproject.toml), so Vercel routes page
+requests and `/api/*` requests through the app. Use the Other framework preset if
+Vercel does not detect Python automatically; no Node build command or output
+directory is needed. `vercel.json` sets the function duration.
+
+Add the production secrets under Project Settings > Environment Variables, then
+redeploy. Set APP_ENV=production, APP_SECRET, DATABASE_URL, BREVO_SMTP_LOGIN,
+BREVO_SMTP_PASSWORD, and BREVO_SENDER_EMAIL. In the Production environment, set
+APP_ORIGIN to the site's exact HTTPS origin (for example,
+`https://art-house-cpsoft.vercel.app`); this must match the browser origin used by
+forms and account API requests. For Preview deployments, leave APP_ORIGIN unset so
+the app can use Vercel's automatic VERCEL_URL value. Add the database, secret, and
+Brevo variables to each Vercel environment where registration or password reset
+should work. BREVO_SMTP_HOST, BREVO_SMTP_PORT, and BREVO_SENDER_NAME are optional
+because the app has defaults for them. Do not upload or commit `.env`.
+
+If Brevo SMTP has authorized-IP restrictions enabled, confirm that requests from
+the Vercel deployment are allowed; a local machine's authorized IP does not cover
+Vercel. To verify the deployment, open `/register.html` and submit the form. The
+`/api/auth/register` endpoint expects a POST, so opening that URL directly in a
+browser is not a valid registration check.
+
 Generate APP_SECRET with `python -c "import secrets; print(secrets.token_urlsafe(48))"`.
 The host must terminate HTTPS and forward requests to the WSGI service. Production
 requires HTTPS APP_ORIGIN and sets Secure, HttpOnly, SameSite=Lax session cookies.
