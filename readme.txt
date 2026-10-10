@@ -31,6 +31,7 @@ migrations/      Supabase PostgreSQL schema migrations
 requirements.txt Production Python dependencies
 Dockerfile       Container deployment setup
 Procfile         WSGI process command for compatible hosts
+render.yaml      Render web-service deployment blueprint
 login.html       Login form rendered by Python
 register.html    Registration form rendered by Python
 account.html     Protected account page rendered by Python
@@ -114,6 +115,30 @@ avoids Vercel's dynamic outbound IP limitation when sending one-time codes.
 Reset codes expire after 10 minutes, allow five verification attempts, and are
 stored as keyed hashes. Account existence is not disclosed by the request endpoint.
 If mail delivery fails, the app logs the failure without logging the OTP or SMTP credentials.
+
+RENDER
+------
+Create a new Render Web Service from this repository and use the included
+`render.yaml` Blueprint, or configure these commands manually:
+
+    Build Command: pip install -r requirements.txt
+    Start Command: gunicorn --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 30 "server:create_app()"
+    Health Check Path: /healthz
+
+Set these Render environment variables:
+
+    APP_ENV=production
+    APP_ORIGIN=https://your-service-name.onrender.com
+    APP_SECRET=<at least 32 random characters>
+    DATABASE_URL=<Supabase PostgreSQL connection URI>
+    BREVO_API_KEY=<Brevo v3 API key>
+    BREVO_SENDER_EMAIL=<verified Brevo sender address>
+    BREVO_SENDER_NAME=Art House
+
+`APP_ORIGIN` must exactly match the public Render URL, including `https://` and
+without a trailing slash. Render supplies `PORT` automatically. The service
+uses `/healthz` for deployment health checks and the Brevo HTTPS API so SMTP
+authorized-IP restrictions are not required.
 
 VERCEL
 ------
