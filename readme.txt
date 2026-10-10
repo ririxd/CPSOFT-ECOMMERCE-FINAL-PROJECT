@@ -113,8 +113,11 @@ placing the SMTP key in BREVO_SMTP_PASSWORD, and verify the sender
 address/domain before deploying. For Vercel, use a Brevo v3 API key in
 BREVO_API_KEY instead of relying on SMTP authorized-IP addresses. The API
 avoids Vercel's dynamic outbound IP limitation when sending one-time codes.
-Reset codes expire after 10 minutes, allow five verification attempts, and are
-stored as keyed hashes. Account existence is not disclosed by the request endpoint.
+Password recovery accepts an account email, sends a six-digit OTP, and accepts
+the OTP together with a new 12–128 character password. Reset codes expire after
+10 minutes, allow five verification attempts, invalidate all existing sessions
+after a successful password change, and are stored as keyed hashes. Account
+existence is not disclosed by the request endpoint.
 If mail delivery fails, the app logs the failure without logging the OTP or SMTP credentials.
 
 RENDER

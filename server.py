@@ -564,6 +564,10 @@ class AuthApp:
                         deliver_otp_email(email, code, intent='Password Reset')
                     except EmailDeliveryError:
                         logging.exception('Brevo password reset email could not be sent')
+                        raise RequestError(
+                            503,
+                            'We could not send a password reset email. Please try again later.'
+                        )
                 return 200, {'message': 'If an account uses that email, a reset code will be sent.'}, []
             if path.endswith('/password-reset/confirm'):
                 data = self.read_body(environ, form)
