@@ -32,7 +32,7 @@
                         <li class="nav-item"><a class="nav-link nav-link-ltr" href="login.html">Shop art</a></li>
                         <li class="nav-item"><a class="artist-cta" href="login.html">Be a house-artist</a></li>
                         <li class="nav-item"><a class="nav-link nav-link-ltr" href="login.html">Our artists</a></li>
-                        <li class="nav-item"><a class="nav-link nav-link-ltr" href="login.html">Our story</a></li>
+                        <li class="nav-item"><button class="nav-link nav-link-ltr story-trigger" type="button" aria-controls="story-modal" aria-haspopup="dialog">Our story</button></li>
                     </ul>
                     <div class="nav-tools">
                         <button class="icon-button search-button" type="button" aria-label="Search artworks"><svg><use href="#icon-search"/></svg></button>
@@ -53,6 +53,19 @@
             </form>
             <div class="search-suggestions"><span>Popular:</span> Abstract · Prints · Under $100</div>
         </div>
+    </div>
+
+    <div class="story-modal" id="story-modal" role="dialog" aria-modal="true" aria-labelledby="story-modal-title" hidden>
+        <div class="story-modal-backdrop" data-story-close></div>
+        <article class="story-modal-card" role="document">
+            <button class="story-modal-close" type="button" aria-label="Close Our story" data-story-close>×</button>
+            <p class="eyebrow">Our story</p>
+            <h2 id="story-modal-title">Art should feel<br><em>like coming home.</em></h2>
+            <p>We created Art House because finding meaningful art should feel personal, not overwhelming. The spaces we live in shape how we feel, and the right piece can bring warmth, curiosity, and a sense of belonging to an ordinary day.</p>
+            <p>Our goal is to make independent art easier to discover while giving artists a thoughtful place to be seen. Every work in the collection has a point of view behind it, and every purchase helps that creative voice keep going.</p>
+            <p>Art House is a small invitation to slow down, look closer, and make room for the things that move you.</p>
+            <a class="button-dark story-modal-action" href="login.html">Explore Art <svg><use href="#icon-arrow"/></svg></a>
+        </article>
     </div>
 
     <div class="offcanvas offcanvas-end bag-panel" tabindex="-1" id="offcanvasCart" aria-labelledby="bagTitle">
@@ -153,6 +166,27 @@
           var button = this.querySelector('button');
           button.innerHTML = 'You’re on the list <span>✓</span>';
           this.querySelector('input').value = '';
+        });
+        var storyModal = document.querySelector('#story-modal');
+        var storyTrigger = document.querySelector('.story-trigger');
+        var storyCloseButtons = document.querySelectorAll('[data-story-close]');
+        var storyReturnFocus;
+        function closeStoryModal() {
+          storyModal.hidden = true;
+          document.body.classList.remove('story-modal-open');
+          if (storyReturnFocus) storyReturnFocus.focus();
+        }
+        storyTrigger.addEventListener('click', function () {
+          storyReturnFocus = storyTrigger;
+          storyModal.hidden = false;
+          document.body.classList.add('story-modal-open');
+          storyModal.querySelector('.story-modal-close').focus();
+        });
+        storyCloseButtons.forEach(function (button) {
+          button.addEventListener('click', closeStoryModal);
+        });
+        document.addEventListener('keydown', function (event) {
+          if (event.key === 'Escape' && !storyModal.hidden) closeStoryModal();
         });
       }());
     </script>

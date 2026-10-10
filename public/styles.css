@@ -390,6 +390,77 @@ svg.primary-color {
   transform: rotate(90deg);
 }
 
+/* Our story modal */
+.story-modal[hidden] { display: none; }
+.story-modal {
+  position: fixed;
+  inset: 0;
+  z-index: 10000;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+}
+.story-modal-backdrop {
+  position: absolute;
+  inset: 0;
+  background: rgba(24, 43, 45, .72);
+  backdrop-filter: blur(4px);
+}
+.story-modal-card {
+  position: relative;
+  width: min(100%, 650px);
+  max-height: min(720px, calc(100vh - 48px));
+  overflow-y: auto;
+  padding: clamp(32px, 6vw, 62px);
+  background: #f8f5ef;
+  color: var(--ah-ink);
+  box-shadow: 0 24px 80px rgba(24, 43, 45, .28);
+}
+.story-modal-card h2 {
+  margin: 0 0 22px;
+  font: 500 clamp(32px, 5vw, 52px)/1.08 "Playfair Display", serif;
+}
+.story-modal-card p:not(.eyebrow) {
+  max-width: 520px;
+  margin: 0 0 16px;
+  color: var(--ah-muted);
+  font-size: 15px;
+  line-height: 1.75;
+}
+.story-modal-close {
+  position: absolute;
+  top: 18px;
+  right: 20px;
+  width: 36px;
+  height: 36px;
+  border: 0;
+  background: transparent;
+  color: var(--ah-ink);
+  font-size: 32px;
+  line-height: 1;
+  cursor: pointer;
+}
+.story-modal-close:hover { color: var(--ah-rust); }
+.story-modal-action {
+  display: inline-flex;
+  margin-top: 10px;
+}
+.story-modal-action svg {
+  width: 18px;
+  height: 18px;
+  margin-left: 18px;
+}
+.story-modal-open { overflow: hidden; }
+.story-trigger {
+  border: 0;
+  background: transparent;
+  cursor: pointer;
+}
+@media (max-width: 575px) {
+  .story-modal { padding: 14px; }
+  .story-modal-card { max-height: calc(100vh - 28px); padding: 42px 24px 28px; }
+}
+
 .search-popup .search-popup-close i {
   display: block;
   position: relative;
