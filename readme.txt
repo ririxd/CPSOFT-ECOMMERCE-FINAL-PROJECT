@@ -97,6 +97,7 @@ BREVO_SMTP_LOGIN=<Brevo SMTP login>
 BREVO_SMTP_PASSWORD=<Brevo SMTP key/password>
 BREVO_SENDER_EMAIL=<verified Brevo sender address>
 BREVO_SENDER_NAME=Art House
+BREVO_PROVIDER=smtp
 # For Vercel, use the HTTPS API instead of SMTP IP allowlisting:
 BREVO_API_KEY=<Brevo v3 API key>
 
@@ -125,20 +126,25 @@ Create a new Render Web Service from this repository and use the included
     Start Command: gunicorn --bind 0.0.0.0:$PORT --workers 2 --threads 4 --timeout 30 "server:create_app()"
     Health Check Path: /healthz
 
-Set these Render environment variables:
+Set these Render environment variables for Brevo SMTP:
 
     APP_ENV=production
     APP_ORIGIN=https://your-service-name.onrender.com
     APP_SECRET=<at least 32 random characters>
     DATABASE_URL=<Supabase PostgreSQL connection URI>
-    BREVO_API_KEY=<Brevo v3 API key>
+    BREVO_PROVIDER=smtp
+    BREVO_SMTP_HOST=smtp-relay.brevo.com
+    BREVO_SMTP_PORT=2525
+    BREVO_SMTP_LOGIN=<Brevo SMTP login>
+    BREVO_SMTP_PASSWORD=<Brevo SMTP key>
     BREVO_SENDER_EMAIL=<verified Brevo sender address>
     BREVO_SENDER_NAME=Art House
 
 `APP_ORIGIN` must exactly match the public Render URL, including `https://` and
 without a trailing slash. Render supplies `PORT` automatically. The service
-uses `/healthz` for deployment health checks and the Brevo HTTPS API so SMTP
-authorized-IP restrictions are not required.
+uses `/healthz` for deployment health checks. Set `BREVO_PROVIDER=smtp` to use
+the SMTP variables even if an old `BREVO_API_KEY` remains configured. Set
+`BREVO_PROVIDER=api` instead when using the Brevo HTTPS API.
 
 VERCEL
 ------

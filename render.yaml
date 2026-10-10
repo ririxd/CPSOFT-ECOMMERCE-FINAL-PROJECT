@@ -14,6 +14,16 @@ services:
         generateValue: true
       - key: DATABASE_URL
         sync: false
+      - key: BREVO_PROVIDER
+        value: smtp
+      - key: BREVO_SMTP_HOST
+        value: smtp-relay.brevo.com
+      - key: BREVO_SMTP_PORT
+        value: "2525"
+      - key: BREVO_SMTP_LOGIN
+        sync: false
+      - key: BREVO_SMTP_PASSWORD
+        sync: false
       - key: BREVO_API_KEY
         sync: false
       - key: BREVO_SENDER_EMAIL

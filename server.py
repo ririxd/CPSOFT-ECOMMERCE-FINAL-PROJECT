@@ -58,6 +58,7 @@ SMTP_PASSWORD = (os.environ.get('BREVO_SMTP_PASSWORD')
 SMTP_SENDER_EMAIL = os.environ.get('BREVO_SENDER_EMAIL', '')
 SMTP_SENDER_NAME = os.environ.get('BREVO_SENDER_NAME', 'Art House')
 BREVO_API_KEY = os.environ.get('BREVO_API_KEY', '')
+BREVO_PROVIDER = os.environ.get('BREVO_PROVIDER', 'auto').strip().lower()
 SESSION_SECONDS = 7 * 24 * 60 * 60
 PUBLIC_FILES = {
     '/': 'text/html', '/index.html': 'text/html', '/styles.css': 'text/css',
@@ -126,7 +127,13 @@ def send_otp_email(receiver_email, otp, intent):
         'Please enter this code to proceed. Do not share this code with anyone.'
     )
     subject = f'Art House - {intent} OTP'
-    if BREVO_API_KEY:
+    smtp_configured = bool(SMTP_LOGIN and SMTP_PASSWORD and SMTP_SENDER_EMAIL)
+    use_smtp = BREVO_PROVIDER == 'smtp' or (
+        BREVO_PROVIDER == 'auto' and not BREVO_API_KEY and smtp_configured
+    )
+    if BREVO_PROVIDER not in ('auto', 'api', 'smtp'):
+        raise RuntimeError('BREVO_PROVIDER must be auto, api, or smtp.')
+    if not use_smtp and BREVO_API_KEY:
         payload = json.dumps({
             'sender': {'name': SMTP_SENDER_NAME, 'email': SMTP_SENDER_EMAIL},
             'to': [{'email': receiver_email}],
@@ -147,7 +154,7 @@ def send_otp_email(receiver_email, otp, intent):
             if response.status < 200 or response.status >= 300:
                 raise RuntimeError(f'Brevo API returned HTTP {response.status}.')
         return True
-    if not SMTP_LOGIN or not SMTP_PASSWORD or not SMTP_SENDER_EMAIL:
+    if not smtp_configured:
         raise RuntimeError('Brevo transactional email is not configured.')
     message['Subject'] = subject
     message['From'] = f'{SMTP_SENDER_NAME} <{SMTP_SENDER_EMAIL}>'
@@ -693,10 +700,17 @@ def create_app():
     if production:
         missing = [name for name in ('APP_SECRET', 'BREVO_SENDER_EMAIL')
                    if not os.environ.get(name)]
+        if BREVO_PROVIDER not in ('auto', 'api', 'smtp'):
+            raise ValueError('BREVO_PROVIDER must be auto, api, or smtp.')
         smtp_configured = (os.environ.get('BREVO_SMTP_LOGIN')
                            and (os.environ.get('BREVO_SMTP_PASSWORD')
                                 or os.environ.get('BREVO_SMTP_KEY')))
-        if not os.environ.get('BREVO_API_KEY') and not smtp_configured:
+        api_configured = bool(os.environ.get('BREVO_API_KEY'))
+        if BREVO_PROVIDER == 'api' and not api_configured:
+            missing.append('BREVO_API_KEY')
+        elif BREVO_PROVIDER == 'smtp' and not smtp_configured:
+            missing.append('BREVO_SMTP_LOGIN and BREVO_SMTP_PASSWORD')
+        elif BREVO_PROVIDER == 'auto' and not (api_configured or smtp_configured):
             missing.append('BREVO_API_KEY (or BREVO_SMTP_LOGIN and BREVO_SMTP_PASSWORD)')
         if not (os.environ.get('DATABASE_URL') or os.environ.get('SUPABASE_DB_URL')):
             missing.insert(0, 'DATABASE_URL')
