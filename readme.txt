@@ -96,6 +96,8 @@ BREVO_SMTP_LOGIN=<Brevo SMTP login>
 BREVO_SMTP_PASSWORD=<Brevo SMTP key/password>
 BREVO_SENDER_EMAIL=<verified Brevo sender address>
 BREVO_SENDER_NAME=Art House
+# For Vercel, use the HTTPS API instead of SMTP IP allowlisting:
+BREVO_API_KEY=<Brevo v3 API key>
 
 In Supabase, open Project > Connect and copy the Session pooler connection URI
 (or use the direct URI when the host supports IPv6). Keep the database password
@@ -103,11 +105,12 @@ URL-encoded. PostgreSQL connections require SSL. On startup, the app applies the
 numbered SQL migrations in migrations/ before accepting requests. Back up the
 Supabase database and keep its service credentials private.
 
-In Brevo, find the SMTP relay settings under Transactional > Settings > SMTP & API.
-Use the SMTP login and SMTP key (not an API key), placing the SMTP key in
-BREVO_SMTP_PASSWORD, and verify the sender address/domain before deploying. The
-app connects to Brevo's SMTP relay on port 2525 using STARTTLS to send
-one-time password reset codes.
+For SMTP deployments, find the SMTP relay settings under Transactional >
+Settings > SMTP & API. Use the SMTP login and SMTP key (not an API key),
+placing the SMTP key in BREVO_SMTP_PASSWORD, and verify the sender
+address/domain before deploying. For Vercel, use a Brevo v3 API key in
+BREVO_API_KEY instead of relying on SMTP authorized-IP addresses. The API
+avoids Vercel's dynamic outbound IP limitation when sending one-time codes.
 Reset codes expire after 10 minutes, allow five verification attempts, and are
 stored as keyed hashes. Account existence is not disclosed by the request endpoint.
 If mail delivery fails, the app logs the failure without logging the OTP or SMTP credentials.
@@ -122,8 +125,9 @@ build command or output directory is needed. The minimal `vercel.json` only
 declares the Vercel schema.
 
 Add the production secrets under Project Settings > Environment Variables, then
-redeploy. Set APP_ENV=production, APP_SECRET, DATABASE_URL, BREVO_SMTP_LOGIN,
-BREVO_SMTP_PASSWORD, and BREVO_SENDER_EMAIL. In the Production environment, set
+redeploy. Set APP_ENV=production, APP_SECRET, DATABASE_URL, BREVO_API_KEY, and
+BREVO_SENDER_EMAIL. SMTP variables remain supported for local or fixed-IP
+deployments. In the Production environment, set
 APP_ORIGIN to the site's exact HTTPS origin (for example,
 `https://art-house-cpsoft.vercel.app`); this must match the browser origin used by
 forms and account API requests. For Preview deployments, leave APP_ORIGIN unset so
@@ -132,9 +136,9 @@ Brevo variables to each Vercel environment where registration or password reset
 should work. BREVO_SMTP_HOST, BREVO_SMTP_PORT, and BREVO_SENDER_NAME are optional
 because the app has defaults for them. Do not upload or commit `.env`.
 
-If Brevo SMTP has authorized-IP restrictions enabled, confirm that requests from
-the Vercel deployment are allowed; a local machine's authorized IP does not cover
-Vercel. To verify the deployment, open `/register.html` and submit the form. The
+Use a Brevo v3 API key for Vercel rather than relying on SMTP authorized-IP
+addresses, because Vercel's outbound IP is not a stable application setting. To
+verify the deployment, open `/register.html` and submit the form. The
 `/api/auth/register` endpoint expects a POST, so opening that URL directly in a
 browser is not a valid registration check.
 

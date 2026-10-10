@@ -17,6 +17,7 @@ from contextlib import closing
 from http import HTTPStatus
 from http.cookies import SimpleCookie, CookieError
 from urllib.parse import parse_qs, quote, urlsplit
+from urllib.request import Request, urlopen
 from wsgiref.simple_server import make_server
 from flask import Flask, request
 from werkzeug.wrappers import Response
@@ -56,6 +57,7 @@ SMTP_PASSWORD = (os.environ.get('BREVO_SMTP_PASSWORD')
                  or os.environ.get('BREVO_SMTP_KEY', ''))
 SMTP_SENDER_EMAIL = os.environ.get('BREVO_SENDER_EMAIL', '')
 SMTP_SENDER_NAME = os.environ.get('BREVO_SENDER_NAME', 'Art House')
+BREVO_API_KEY = os.environ.get('BREVO_API_KEY', '')
 SESSION_SECONDS = 7 * 24 * 60 * 60
 PUBLIC_FILES = {
     '/': 'text/html', '/index.html': 'text/html', '/styles.css': 'text/css',
@@ -118,14 +120,35 @@ def password_hash(password, salt):
 
 
 def send_otp_email(receiver_email, otp, intent):
-    """Send a one-time code through Brevo SMTP using the lab's flow."""
-    if not SMTP_LOGIN or not SMTP_PASSWORD or not SMTP_SENDER_EMAIL:
-        raise RuntimeError('Brevo transactional email is not configured.')
     message = MIMEText(
         f'Your {intent} One-Time Password (OTP) is: {otp}\n\n'
         'Please enter this code to proceed. Do not share this code with anyone.'
     )
-    message['Subject'] = f'Art House - {intent} OTP'
+    subject = f'Art House - {intent} OTP'
+    if BREVO_API_KEY:
+        payload = json.dumps({
+            'sender': {'name': SMTP_SENDER_NAME, 'email': SMTP_SENDER_EMAIL},
+            'to': [{'email': receiver_email}],
+            'subject': subject,
+            'textContent': message.get_payload(),
+        }).encode('utf-8')
+        request = Request(
+            'https://api.brevo.com/v3/smtp/email',
+            data=payload,
+            headers={
+                'accept': 'application/json',
+                'api-key': BREVO_API_KEY,
+                'content-type': 'application/json',
+            },
+            method='POST',
+        )
+        with urlopen(request, timeout=12) as response:
+            if response.status < 200 or response.status >= 300:
+                raise RuntimeError(f'Brevo API returned HTTP {response.status}.')
+        return True
+    if not SMTP_LOGIN or not SMTP_PASSWORD or not SMTP_SENDER_EMAIL:
+        raise RuntimeError('Brevo transactional email is not configured.')
+    message['Subject'] = subject
     message['From'] = f'{SMTP_SENDER_NAME} <{SMTP_SENDER_EMAIL}>'
     message['To'] = receiver_email
     with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=12) as smtp:
@@ -145,6 +168,17 @@ class RequestError(Exception):
     def __init__(self, status, message):
         self.status = status
         self.message = message
+
+
+class EmailDeliveryError(Exception):
+    """Raised when an OTP cannot be delivered by the configured provider."""
+
+
+def deliver_otp_email(receiver_email, otp, intent):
+    try:
+        send_otp_email(receiver_email, otp, intent)
+    except (RuntimeError, ValueError, smtplib.SMTPException, OSError) as error:
+        raise EmailDeliveryError from error
 
 
 class AuthApp:
@@ -415,8 +449,8 @@ class AuthApp:
                         raise
                     raise RequestError(409, 'That email or username is already awaiting verification.')
                 try:
-                    send_otp_email(email, code, intent='Account Registration')
-                except (RuntimeError, ValueError, smtplib.SMTPException, OSError):
+                    deliver_otp_email(email, code, intent='Account Registration')
+                except EmailDeliveryError:
                     logging.exception('Brevo registration email could not be sent')
                     with db:
                         db.execute('DELETE FROM pending_registrations WHERE email = ?', (email,))
@@ -501,8 +535,8 @@ class AuthApp:
                             expires = excluded.expires, attempts = 0, created_at = excluded.created_at''',
                                    (email, self.reset_code_hash(email, code), now_ms() + 10 * 60 * 1000, now_ms()))
                     try:
-                        send_otp_email(email, code, intent='Password Reset')
-                    except (RuntimeError, ValueError, smtplib.SMTPException, OSError):
+                        deliver_otp_email(email, code, intent='Password Reset')
+                    except EmailDeliveryError:
                         logging.exception('Brevo password reset email could not be sent')
                 return 200, {'message': 'If an account uses that email, a reset code will be sent.'}, []
             if path.endswith('/password-reset/confirm'):
@@ -602,6 +636,18 @@ class AuthApp:
         except Exception:
             logging.exception('Authentication request failed')
             status, body, headers = 500, {'error': 'Something went wrong. Please try again.'}, []
+            path = environ.get('PATH_INFO', '')
+            if (environ.get('CONTENT_TYPE', '').split(';')[0].strip() == 'application/x-www-form-urlencoded'
+                    and path in AUTH_PATHS):
+                if path == '/api/auth/register':
+                    body = self.render(
+                        'register.html',
+                        error='We could not start email verification. Please try again later.')
+                elif path == '/api/auth/register/verify':
+                    body = self.render(
+                        'verify-email.html',
+                        email='',
+                        error='We could not verify your email. Please try again later.')
         if isinstance(body, dict):
             body = json.dumps(body).encode('utf-8')
             headers.append(('Content-Type', 'application/json; charset=utf-8'))
@@ -626,10 +672,13 @@ def create_app():
     if production and not configured_origin and not (on_vercel and vercel_url):
         raise ValueError('Production requires APP_ORIGIN or VERCEL_URL.')
     if production:
-        missing = [name for name in ('APP_SECRET', 'BREVO_SMTP_LOGIN', 'BREVO_SENDER_EMAIL')
+        missing = [name for name in ('APP_SECRET', 'BREVO_SENDER_EMAIL')
                    if not os.environ.get(name)]
-        if not (os.environ.get('BREVO_SMTP_PASSWORD') or os.environ.get('BREVO_SMTP_KEY')):
-            missing.append('BREVO_SMTP_PASSWORD')
+        smtp_configured = (os.environ.get('BREVO_SMTP_LOGIN')
+                           and (os.environ.get('BREVO_SMTP_PASSWORD')
+                                or os.environ.get('BREVO_SMTP_KEY')))
+        if not os.environ.get('BREVO_API_KEY') and not smtp_configured:
+            missing.append('BREVO_API_KEY (or BREVO_SMTP_LOGIN and BREVO_SMTP_PASSWORD)')
         if not (os.environ.get('DATABASE_URL') or os.environ.get('SUPABASE_DB_URL')):
             missing.insert(0, 'DATABASE_URL')
         if missing:
