@@ -351,7 +351,7 @@ class AuthApp:
         with db:
             db.execute('DELETE FROM attempts WHERE expires <= ?', (now_ms(),))
             db.execute('''INSERT INTO attempts VALUES (?, 1, ?)
-                ON CONFLICT(key) DO UPDATE SET count = count + 1''',
+                ON CONFLICT(key) DO UPDATE SET count = attempts.count + 1''',
                        (key, now_ms() + 15 * 60 * 1000))
             count = db.execute('SELECT count FROM attempts WHERE key = ?', (key,)).fetchone()['count']
         return count > maximum
