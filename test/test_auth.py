@@ -93,7 +93,7 @@ class AuthTests(unittest.TestCase):
         self.assertNotIn('value="wrong"', bad['body'])
         login = self.request('/api/auth/login', self.credentials, form=True)
         self.assertEqual(login['status'], 303)
-        self.assertEqual(login['headers']['Location'], '/account.html')
+        self.assertEqual(login['headers']['Location'], '/buyer-dashboard.html')
 
     def test_server_validation_and_private_files(self):
         for change in ({'password': 'short'}, {'password': 'x' * 129}, {'password': []}, {'username': '<bad>'}, {'email': 'bad'}, {'username': None}):

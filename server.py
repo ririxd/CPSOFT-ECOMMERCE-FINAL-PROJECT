@@ -1091,7 +1091,7 @@ class AuthApp:
                     if persona == 'artist':
                         self.create_seller_for_user(db, user)
                 if form:
-                    return 303, '', [('Location', '/account.html')]
+                    return 303, '', [('Location', '/seller-dashboard.html' if persona == 'artist' else '/buyer-dashboard.html')]
                 return 200, {'message': 'Your Art House profile is ready.', 'persona': persona,
                              'redirect': '/seller-dashboard.html' if persona == 'artist' else None}, []
             if path.endswith('/password-reset/request'):
@@ -1177,7 +1177,8 @@ class AuthApp:
             with db:
                 headers = [self.issue_session(db, environ, user['id'])]
             if form:
-                return 303, '', headers + [('Location', '/account.html')]
+                destination = '/seller-dashboard.html' if user['persona'] == 'artist' else '/buyer-dashboard.html'
+                return 303, '', headers + [('Location', destination)]
             return 200, {'user': user}, headers
         if method not in ('GET', 'HEAD'):
             raise RequestError(405, 'Method not allowed.')
@@ -1190,7 +1191,12 @@ class AuthApp:
             user = self.user(db, environ)
             if not user:
                 return 302, '', [('Location', '/login.html')]
-            return 200, self.render('account.html', **{**user, 'persona': user.get('persona') or ''}), []
+            return 200, self.render(
+                'account.html',
+                **{**user,
+                   'persona': user.get('persona') or '',
+                   'dashboard_url': '/seller-dashboard.html' if user.get('persona') == 'artist'
+                   else '/buyer-dashboard.html'})
         if path == '/seller-dashboard.html':
             user = self.user(db, environ)
             if not user:
