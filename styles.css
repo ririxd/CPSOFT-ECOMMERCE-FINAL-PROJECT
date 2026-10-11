@@ -20,32 +20,20 @@ button, .button-dark, .artist-cta, .add-to-bag, .category-chip, input, textarea,
     transition: background-color .25s ease, border-color .25s ease, color .25s ease,
         box-shadow .25s ease, transform .25s ease, opacity .25s ease;
 }
-button, .button-dark, .artist-cta, .add-to-bag, .category-chip {
-    position: relative;
+button:not(:disabled), .button, .button-dark, .artist-cta, .add-to-bag, .category-chip { cursor: pointer; }
+button:not(:disabled):hover, button:not(:disabled):focus-visible,
+.button:hover, .button:focus-visible,
+.button-dark:hover, .button-dark:focus-visible,
+.artist-cta:hover, .artist-cta:focus-visible,
+.add-to-bag:hover, .add-to-bag:focus-visible,
+.category-chip:hover, .category-chip:focus-visible,
+.auth-back:hover, .auth-back:focus-visible,
+.header-actions > a:hover, .header-actions > a:focus-visible {
+    text-decoration-line: underline;
+    text-decoration-color: currentColor;
+    text-decoration-thickness: 2px;
+    text-underline-offset: 5px;
 }
-button::after, .button-dark::after, .artist-cta::after, .add-to-bag::after, .category-chip::after {
-    position: absolute;
-    right: 14px;
-    bottom: 7px;
-    left: 14px;
-    height: 2px;
-    border-radius: 999px;
-    background: currentColor;
-    content: "";
-    opacity: 0;
-    pointer-events: none;
-    transform: scaleX(0);
-    transition: opacity .25s ease, transform .25s ease;
-}
-button:not(:disabled):hover::after, button:not(:disabled):focus-visible::after,
-.button-dark:hover::after, .button-dark:focus-visible::after,
-.artist-cta:hover::after, .artist-cta:focus-visible::after,
-.add-to-bag:hover::after, .add-to-bag:focus-visible::after,
-.category-chip:hover::after, .category-chip:focus-visible::after {
-    opacity: .9;
-    transform: scaleX(1);
-}
-button:not(:disabled), .button-dark, .artist-cta, .add-to-bag, .category-chip { cursor: pointer; }
 button:not(:disabled):hover, .button-dark:hover, .artist-cta:hover, .add-to-bag:hover {
     transform: translateY(-2px);
     box-shadow: 0 8px 18px rgba(32, 37, 37, .14);
