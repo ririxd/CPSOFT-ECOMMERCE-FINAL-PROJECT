@@ -356,6 +356,15 @@ class AuthApp:
                 seller_columns = {row['name'] for row in db.execute('PRAGMA table_info(sellers)').fetchall()}
                 if 'payment_details' not in seller_columns:
                     db.execute("ALTER TABLE sellers ADD COLUMN payment_details TEXT NOT NULL DEFAULT ''")
+                db.execute('''CREATE TABLE IF NOT EXISTS cart_items (
+                    buyer_id INTEGER NOT NULL REFERENCES registered_accounts(id) ON DELETE CASCADE,
+                    item_id INTEGER NOT NULL REFERENCES listed_items(id) ON DELETE CASCADE,
+                    quantity INTEGER NOT NULL CHECK (quantity > 0),
+                    created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+                    PRIMARY KEY (buyer_id, item_id)
+                )''')
+                db.execute('''CREATE INDEX IF NOT EXISTS cart_items_buyer
+                    ON cart_items (buyer_id, created_at DESC)''')
 
     def connect(self):
         if self.postgres:
