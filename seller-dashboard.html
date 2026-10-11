@@ -55,8 +55,19 @@
         .pill { border-radius: 20px; background: #e6eee9; color: var(--green); padding: 3px 9px; font-size: 12px; }
         .notice { display: none; margin-bottom: 20px; padding: 12px 15px; background: #f5e3dc; color: #8a422b; }
         .notice.show { display: block; }
+        .stock-modal { position: fixed; inset: 0; z-index: 20; display: grid; place-items: center; padding: 20px; background: rgba(32, 37, 37, .55); }
+        .stock-modal[hidden] { display: none; }
+        .stock-modal-card { position: relative; width: min(460px, 100%); padding: 28px; border: 1px solid var(--line); border-radius: 16px; background: var(--card); box-shadow: 0 24px 70px rgba(32, 37, 37, .2); }
+        .stock-modal-card h2 { margin: 0 0 8px; }
+        .stock-modal-card p { color: var(--muted); margin: 0 0 18px; }
+        .stock-modal-close { position: absolute; top: 10px; right: 12px; padding: 4px 8px; background: transparent; color: var(--muted); font-size: 24px; line-height: 1; }
+        .stock-modal-actions { display: flex; justify-content: flex-end; gap: 10px; margin-top: 18px; }
+        .stock-modal-actions button { padding: 10px 16px; }
+        .stock-modal-cancel { background: #ece8df; color: var(--ink); }
+        .stock-modal-submit { background: var(--green); color: #fff; }
+        .stock-modal-status { min-height: 20px; margin: 10px 0 0 !important; color: #8a422b !important; font-size: 13px; }
         @media (max-width: 800px) { .stats, .dashboard-grid { grid-template-columns: 1fr 1fr; } .intro { display: block; } .intro .button { display: inline-block; margin-top: 18px; } }
-        @media (max-width: 560px) { main { width: 92vw; margin-top: 30px; } header { padding: 14px 4vw; gap: 12px; align-items: flex-start; } .header-actions { gap: 8px; flex-wrap: wrap; justify-content: flex-end; font-size: 13px; } .header-actions form { display: inline; } .header-actions .button { padding: 8px 10px; } .stats { grid-template-columns: 1fr 1fr; gap: 8px; } .stat, section { padding: 16px; } .stat strong { font-size: 25px; } .product { grid-template-columns: 1fr; gap: 10px; } .product .stock { text-align: left; } .product-info { align-items: flex-start; } .product-info > div { min-width: 0; overflow-wrap: anywhere; } .product .small-button { width: 100%; } .section-heading { align-items: flex-start; flex-direction: column; } .order-head { align-items: flex-start; flex-wrap: wrap; } }
+        @media (max-width: 560px) { main { width: 92vw; margin-top: 30px; } header { padding: 14px 4vw; gap: 12px; align-items: flex-start; } .header-actions { gap: 8px; flex-wrap: wrap; justify-content: flex-end; font-size: 13px; } .header-actions form { display: inline; } .header-actions .button { padding: 8px 10px; } .stats { grid-template-columns: 1fr 1fr; gap: 8px; } .stat, section { padding: 16px; } .stat strong { font-size: 25px; } .product { grid-template-columns: 1fr; gap: 10px; } .product .stock { text-align: left; } .product-info { align-items: flex-start; } .product-info > div { min-width: 0; overflow-wrap: anywhere; } .product .small-button { width: 100%; } .section-heading { align-items: flex-start; flex-direction: column; } .order-head { align-items: flex-start; flex-wrap: wrap; } .stock-modal-card { padding: 24px 18px; } .stock-modal-actions { flex-direction: column-reverse; } .stock-modal-actions button { width: 100%; } }
     </style>
 </head>
 <body>
@@ -83,7 +94,7 @@
                 <label>Title<input name="title" maxlength="120" required></label>
                 <label>Description<textarea name="description" maxlength="2000"></textarea></label>
                 <label>Dimensions<input name="dimensions" maxlength="240" placeholder="e.g. 30 × 40 cm"></label>
-                <label>Price (USD)<input name="price" type="number" min="0.01" step="0.01" required></label>
+                <label>Price (PHP)<input name="price" type="number" min="0.01" step="0.01" required></label>
                 <label>Opening stock<input name="inventory" type="number" min="0" step="1" value="0" required></label>
                 <label>Low-stock alert at<input name="low_stock_threshold" type="number" min="0" step="1" value="3" required></label>
                 <label class="image-picker">Product images<input id="product-images" name="images" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple><small>Upload up to 5 JPG, PNG, WEBP, or GIF images. Each image must be 1.5 MB or smaller.</small><span class="image-preview" id="image-preview"></span></label>
@@ -91,9 +102,25 @@
             </form><hr><h2>Online payment details</h2><p class="muted">Share the account or wallet details buyers should use for online payments.</p><form id="payment-form"><textarea id="payment-details" maxlength="1000" placeholder="Bank or e-wallet name, account name, account number..."></textarea><button type="submit">Save payment details</button></form></section>
         </div>
     </main>
+    <div id="stock-modal" class="stock-modal" hidden role="dialog" aria-modal="true" aria-labelledby="stock-modal-title">
+        <div class="stock-modal-card">
+            <button id="stock-modal-close" class="stock-modal-close" type="button" aria-label="Close stock adjustment">×</button>
+            <h2 id="stock-modal-title">Adjust stock</h2>
+            <p>Use a negative number to remove stock.</p>
+            <form id="stock-form">
+                <label for="stock-quantity">Stock adjustment</label>
+                <input id="stock-quantity" name="quantity" type="number" step="1" required>
+                <p id="stock-modal-status" class="stock-modal-status" role="alert"></p>
+                <div class="stock-modal-actions">
+                    <button id="stock-modal-cancel" class="stock-modal-cancel" type="button">Cancel</button>
+                    <button class="stock-modal-submit" type="submit">Adjust stock</button>
+                </div>
+            </form>
+        </div>
+    </div>
     <script>
         const notice = document.getElementById('notice');
-        const money = cents => '$' + (Number(cents || 0) / 100).toFixed(2);
+        const money = cents => '₱' + (Number(cents || 0) / 100).toFixed(2);
         const date = value => value ? new Date(Number(value)).toLocaleDateString() : '—';
         function showError(message) { notice.textContent = message; notice.classList.add('show'); }
         function clearError() { notice.textContent = ''; notice.classList.remove('show'); }
@@ -148,12 +175,47 @@
                 await load();
             } catch (error) { showError(error.message); }
         });
+        const stockModal = document.getElementById('stock-modal');
+        const stockForm = document.getElementById('stock-form');
+        const stockQuantity = document.getElementById('stock-quantity');
+        const stockModalStatus = document.getElementById('stock-modal-status');
+        let stockProductId = '';
+        function closeStockModal() {
+            stockModal.hidden = true;
+            stockProductId = '';
+            stockForm.reset();
+            stockModalStatus.textContent = '';
+        }
+        function openStockModal(productId) {
+            stockProductId = productId;
+            stockModal.hidden = false;
+            stockQuantity.focus();
+        }
+        document.getElementById('stock-modal-close').addEventListener('click', closeStockModal);
+        document.getElementById('stock-modal-cancel').addEventListener('click', closeStockModal);
+        stockModal.addEventListener('click', event => { if (event.target === stockModal) closeStockModal(); });
+        document.addEventListener('keydown', event => { if (event.key === 'Escape' && !stockModal.hidden) closeStockModal(); });
+        stockForm.addEventListener('submit', async event => {
+            event.preventDefault();
+            stockModalStatus.textContent = '';
+            const quantity = stockQuantity.value.trim();
+            if (!/^-?\d+$/.test(quantity)) {
+                stockModalStatus.textContent = 'Enter a whole number.';
+                stockQuantity.focus();
+                return;
+            }
+            try {
+                await api('/api/seller/products/' + stockProductId + '/stock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ quantity_delta: quantity, note: 'Dashboard adjustment' }) });
+                closeStockModal();
+                await load();
+            } catch (error) {
+                stockModalStatus.textContent = error.message;
+            }
+        });
         document.getElementById('products').addEventListener('click', async event => {
             const button = event.target.closest('[data-stock]');
             if (!button) return;
-            const quantity = prompt('Adjust stock by a whole number (use a negative number to remove stock):');
-            if (quantity === null) return;
-            try { await api('/api/seller/products/' + button.dataset.stock + '/stock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ quantity_delta: quantity, note: 'Dashboard adjustment' }) }); await load(); } catch (error) { showError(error.message); }
+            openStockModal(button.dataset.stock);
         });
         document.getElementById('orders').addEventListener('click', async event => {
             const button = event.target.closest('[data-verify]');
