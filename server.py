@@ -665,6 +665,10 @@ class AuthApp:
                 raise RequestError(400, 'Choose cash on delivery or online payment.')
             if not isinstance(reference, str) or len(reference.strip()) > 120:
                 raise RequestError(400, 'Enter a valid payment reference.')
+            if payment_method == 'online' and not reference.strip():
+                raise RequestError(400, 'Enter your online payment reference.')
+            if payment_method == 'cod':
+                reference = ''
             with db:
                 lines = db.execute('''SELECT cart_items.item_id, cart_items.quantity,
                     listed_items.price_cents, listed_items.inventory, listed_items.seller_id
