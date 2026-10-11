@@ -1196,7 +1196,7 @@ class AuthApp:
                 **{**user,
                    'persona': user.get('persona') or '',
                    'dashboard_url': '/seller-dashboard.html' if user.get('persona') == 'artist'
-                   else '/buyer-dashboard.html'})
+                   else '/buyer-dashboard.html'}), []
         if path == '/seller-dashboard.html':
             user = self.user(db, environ)
             if not user:
