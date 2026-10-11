@@ -1,4 +1,5 @@
 ALTER TABLE listed_items ADD COLUMN IF NOT EXISTS low_stock_threshold INTEGER NOT NULL DEFAULT 3;
+ALTER TABLE listed_items ADD COLUMN IF NOT EXISTS images TEXT NOT NULL DEFAULT '[]';
 ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS payment_method TEXT NOT NULL DEFAULT 'online'
     CHECK (payment_method IN ('online', 'cod'));
 ALTER TABLE checkouts ADD COLUMN IF NOT EXISTS payment_reference TEXT NOT NULL DEFAULT '';

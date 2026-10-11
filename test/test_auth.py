@@ -175,6 +175,14 @@ class AuthTests(unittest.TestCase):
         dashboard = self.request('/api/seller/dashboard', cookie=cookie)
         self.assertEqual(dashboard['status'], 200)
         self.assertEqual(json.loads(dashboard['body'])['products'], [])
+        image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+        created = self.request('/api/seller/products', {
+            'title': 'Image study', 'description': 'A small study', 'price': '12.50',
+            'inventory': 2, 'low_stock_threshold': 1, 'images': [image]
+        }, cookie=cookie)
+        self.assertEqual(created['status'], 201)
+        dashboard = self.request('/api/seller/dashboard', cookie=cookie)
+        self.assertEqual(json.loads(dashboard['body'])['products'][0]['images'], [image])
 
 
 if __name__ == '__main__':

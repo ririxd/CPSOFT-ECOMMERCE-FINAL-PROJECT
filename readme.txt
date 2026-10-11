@@ -69,6 +69,10 @@ registration, account details and logout work without JavaScript.
 Passwords use salted scrypt hashes. Seven-day sessions use random tokens in
 HttpOnly, SameSite=Lax cookies; only token hashes are stored in the database. Logout
 revokes the session. Account APIs and pages are served with Cache-Control: no-store.
+Creator accounts can use seller-dashboard.html to add active products, including
+up to five JPG, PNG, WEBP, or GIF images per product. Images are validated on the
+server, limited to 1.5 MB each, and stored with the product record so they remain
+available across local SQLite and Supabase PostgreSQL deployments.
 Login and registration share persistent limits: 10 attempts per email and 50 per
 connection IP in 15 minutes. Forwarded IP headers are deliberately not trusted.
 Behind a reverse proxy, the connection IP limit is shared by that proxy's users;

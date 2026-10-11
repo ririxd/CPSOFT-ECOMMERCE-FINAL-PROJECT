@@ -1,4 +1,6 @@
 """Art House WSGI application with SQLite development and Supabase production storage."""
+import base64
+import binascii
 import hashlib
 import hmac
 import html
@@ -264,6 +266,7 @@ class AuthApp:
                     price_cents INTEGER NOT NULL CHECK (price_cents >= 0),
                     inventory INTEGER NOT NULL DEFAULT 0 CHECK (inventory >= 0),
                     low_stock_threshold INTEGER NOT NULL DEFAULT 3 CHECK (low_stock_threshold >= 0),
+                    images TEXT NOT NULL DEFAULT '[]',
                     status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'active', 'archived')),
                     created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
                 );
@@ -328,6 +331,8 @@ class AuthApp:
                 item_columns = {row['name'] for row in db.execute('PRAGMA table_info(listed_items)').fetchall()}
                 if 'low_stock_threshold' not in item_columns:
                     db.execute('ALTER TABLE listed_items ADD COLUMN low_stock_threshold INTEGER NOT NULL DEFAULT 3')
+                if 'images' not in item_columns:
+                    db.execute("ALTER TABLE listed_items ADD COLUMN images TEXT NOT NULL DEFAULT '[]'")
                 checkout_columns = {row['name'] for row in db.execute('PRAGMA table_info(checkouts)').fetchall()}
                 if 'payment_method' not in checkout_columns:
                     db.execute("ALTER TABLE checkouts ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'online'")
@@ -400,7 +405,7 @@ class AuthApp:
                       lambda match: html.escape(str(values.get(match[1], '')), quote=True), source)
 
     @staticmethod
-    def read_body(environ, form):
+    def read_body(environ, form, max_length=4096):
         content_type = environ.get('CONTENT_TYPE', '').split(';')[0].strip()
         if content_type not in ('application/json', 'application/x-www-form-urlencoded'):
             raise RequestError(415, 'Unsupported form content type.')
@@ -408,7 +413,7 @@ class AuthApp:
             length = int(environ.get('CONTENT_LENGTH') or '0')
         except ValueError:
             raise RequestError(400, 'Invalid request length.')
-        if length < 0 or length > 4096:
+        if length < 0 or length > max_length:
             raise RequestError(413, 'Request is too large.')
         try:
             raw = environ['wsgi.input'].read(length).decode('utf-8')
@@ -449,8 +454,13 @@ class AuthApp:
     @staticmethod
     def seller_dashboard_data(db, seller_id):
         products = [dict(row) for row in db.execute('''SELECT id, title, description,
-            price_cents, inventory, low_stock_threshold, status, created_at FROM listed_items
+            price_cents, inventory, low_stock_threshold, images, status, created_at FROM listed_items
             WHERE seller_id = ? ORDER BY created_at DESC, id DESC''', (seller_id,)).fetchall()]
+        for product in products:
+            try:
+                product['images'] = json.loads(product['images'])
+            except (TypeError, json.JSONDecodeError):
+                product['images'] = []
         movements = [dict(row) for row in db.execute('''SELECT inventory_movements.id,
             inventory_movements.item_id, listed_items.title AS item_title, checkout_id,
             quantity_delta, reason, note, inventory_movements.created_at AS created_at
@@ -478,6 +488,31 @@ class AuthApp:
                                    'quantity': row['quantity'], 'unit_price_cents': row['unit_price_cents']})
         return {'products': products, 'orders': list(orders_by_id.values()), 'movements': movements}
 
+    @staticmethod
+    def validate_product_images(images):
+        if images is None:
+            return []
+        if not isinstance(images, list) or len(images) > 5:
+            raise RequestError(400, 'Add no more than five product images.')
+        allowed = {'image/jpeg', 'image/png', 'image/webp', 'image/gif'}
+        validated = []
+        for image in images:
+            if (not isinstance(image, str) or not image.startswith('data:')
+                    or ';base64,' not in image):
+                raise RequestError(400, 'Product images must be valid image files.')
+            header, encoded = image.split(';base64,', 1)
+            mime = header[5:]
+            if mime not in allowed:
+                raise RequestError(400, 'Use JPG, PNG, WEBP, or GIF product images.')
+            try:
+                decoded = base64.b64decode(encoded, validate=True)
+            except (ValueError, binascii.Error):
+                raise RequestError(400, 'Product images must be valid image files.')
+            if not decoded or len(decoded) > 1_500_000:
+                raise RequestError(413, 'Each product image must be 1.5 MB or smaller.')
+            validated.append(image)
+        return validated
+
     def dispatch_seller_api(self, environ, db, path, method):
         user = self.user(db, environ)
         if not user:
@@ -501,10 +536,11 @@ class AuthApp:
         request_origin = f'{request_scheme}://{request_host}' if request_host else None
         if environ.get('HTTP_ORIGIN') not in (self.origin, request_origin):
             raise RequestError(403, 'Request origin is not allowed.')
-        data = self.read_body(environ, False)
+        data = self.read_body(environ, False, max_length=12 * 1024 * 1024)
         if path == '/api/seller/products':
             title = data.get('title', '')
             description = data.get('description', '')
+            images = self.validate_product_images(data.get('images'))
             try:
                 cents = int((Decimal(str(data.get('price', ''))) * 100).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
                 stock = int(data.get('inventory', 0))
@@ -517,9 +553,10 @@ class AuthApp:
                 raise RequestError(400, 'Check the product name, description, price, and stock values.')
             with db:
                 item_id = db.execute('''INSERT INTO listed_items
-                    (seller_id, title, description, price_cents, inventory, low_stock_threshold, status)
-                    VALUES (?, ?, ?, ?, ?, ?, 'active') RETURNING id''',
-                    (seller_id, title.strip(), description.strip(), cents, stock, threshold)).fetchone()['id']
+                    (seller_id, title, description, price_cents, inventory, low_stock_threshold, images, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, 'active') RETURNING id''',
+                    (seller_id, title.strip(), description.strip(), cents, stock, threshold,
+                     json.dumps(images, separators=(',', ':')))).fetchone()['id']
                 if stock:
                     db.execute('''INSERT INTO inventory_movements
                         (seller_id, item_id, quantity_delta, reason, note, created_at)
