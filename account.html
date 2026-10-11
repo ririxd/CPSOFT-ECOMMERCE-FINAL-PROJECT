@@ -45,6 +45,35 @@
                     <p class="auth-status" id="persona-status" role="status" aria-live="polite"></p>
                 </form>
             </section>
+            <section class="art-interest-onboarding" id="art-interest-onboarding" hidden aria-labelledby="art-interest-heading">
+                <p class="eyebrow">A little more about your taste</p>
+                <h2 id="art-interest-heading">What kinds of art do you love?</h2>
+                <p class="auth-description">Choose up to five. We’ll use your picks to shape what you see.</p>
+                <form id="art-interest-form">
+                    <fieldset class="art-interest-choices" id="interest-choices" tabindex="-1">
+                        <legend class="visually-hidden">Choose up to five art styles</legend>
+                        <label class="art-interest-choice"><input type="checkbox" name="interest" value="abstract"><span>Abstract</span></label>
+                        <label class="art-interest-choice"><input type="checkbox" name="interest" value="painting"><span>Painting</span></label>
+                        <label class="art-interest-choice"><input type="checkbox" name="interest" value="photography"><span>Photography</span></label>
+                        <label class="art-interest-choice"><input type="checkbox" name="interest" value="illustration"><span>Illustration</span></label>
+                        <label class="art-interest-choice"><input type="checkbox" name="interest" value="sculpture"><span>Sculpture</span></label>
+                        <label class="art-interest-choice"><input type="checkbox" name="interest" value="printmaking"><span>Printmaking</span></label>
+                        <label class="art-interest-choice"><input type="checkbox" name="interest" value="textile"><span>Textile &amp; fiber</span></label>
+                        <label class="art-interest-choice"><input type="checkbox" name="interest" value="ceramics"><span>Ceramics</span></label>
+                        <label class="art-interest-choice"><input type="checkbox" name="interest" value="digital"><span>Digital art</span></label>
+                        <label class="art-interest-choice"><input type="checkbox" name="interest" value="landscape"><span>Landscape &amp; nature</span></label>
+                        <label class="art-interest-choice"><input type="checkbox" name="interest" value="portrait"><span>Portraiture</span></label>
+                        <label class="art-interest-choice"><input type="checkbox" name="interest" value="minimalist"><span>Minimalist</span></label>
+                        <label class="art-interest-choice"><input type="checkbox" name="interest" value="surrealism"><span>Surrealism</span></label>
+                        <label class="art-interest-choice"><input type="checkbox" name="interest" value="street"><span>Street art</span></label>
+                        <label class="art-interest-choice"><input type="checkbox" name="interest" value="mixed-media"><span>Mixed media</span></label>
+                        <label class="art-interest-choice"><input type="checkbox" name="interest" value="traditional"><span>Traditional &amp; folk</span></label>
+                    </fieldset>
+                    <p class="interest-count" id="interest-count" aria-live="polite">0 of 5 selected</p>
+                    <button class="button-dark auth-submit" type="submit">Finish <span aria-hidden="true">→</span></button>
+                    <p class="auth-status" id="interest-status" role="status" aria-live="polite"></p>
+                </form>
+            </section>
             <p class="eyebrow">Your house-artist account</p>
             <h2 id="form-heading">Welcome home.</h2>
             <p class="auth-description">You're part of the house.</p>
@@ -55,6 +84,7 @@
     <footer class="auth-footer">Independent art. Shared with the world. <span aria-hidden="true">✳</span> Art House</footer>
     <script>
         const onboarding = document.getElementById('persona-onboarding');
+        const interestOnboarding = document.getElementById('art-interest-onboarding');
         const savedPersona = '{{persona}}';
         if (new URLSearchParams(window.location.search).get('welcome') === '1' || !savedPersona) {
             onboarding.hidden = false;
@@ -76,12 +106,37 @@
                 const result = await response.json();
                 if (!response.ok) throw new Error(result.error || 'Could not save your choice.');
                 onboarding.hidden = true;
-                history.replaceState(null, '', window.location.pathname);
+                interestOnboarding.hidden = false;
+                document.getElementById('interest-choices')?.focus();
             } catch (error) {
                 status.textContent = error.message;
             } finally {
                 button.disabled = false;
             }
+        });
+
+        const interestForm = document.getElementById('art-interest-form');
+        const interestInputs = Array.from(interestForm.querySelectorAll('input[name="interest"]'));
+        const interestStatus = document.getElementById('interest-status');
+        const interestCount = document.getElementById('interest-count');
+        interestInputs.forEach(input => input.addEventListener('change', () => {
+            const selected = interestInputs.filter(item => item.checked);
+            if (selected.length > 5) {
+                input.checked = false;
+                interestStatus.textContent = 'Choose up to five art interests.';
+            } else {
+                interestStatus.textContent = '';
+            }
+            const count = interestInputs.filter(item => item.checked).length;
+            interestCount.textContent = `${count} of 5 selected`;
+            interestInputs.forEach(item => { item.disabled = count >= 5 && !item.checked; });
+        }));
+        interestForm.addEventListener('submit', event => {
+            event.preventDefault();
+            const interests = interestInputs.filter(item => item.checked).map(item => item.value);
+            localStorage.setItem('art-house-interests', JSON.stringify(interests));
+            interestOnboarding.hidden = true;
+            history.replaceState(null, '', window.location.pathname);
         });
     </script>
 </body>

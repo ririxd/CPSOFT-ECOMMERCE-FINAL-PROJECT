@@ -1547,6 +1547,17 @@ body { margin:0; background:var(--ah-white); color:var(--ah-ink); font-family:"D
 .persona-choice strong { color: #242821; font-size: 13px; }
 .persona-choice small { color: #77796f; font-size: 11px; line-height: 1.45; }
 .persona-onboarding .auth-submit { margin-top: 0; }
+.art-interest-onboarding { margin-bottom: 30px; }
+.art-interest-onboarding h2 { margin-bottom: 8px; }
+.art-interest-onboarding .auth-description { margin-bottom: 18px; }
+.art-interest-choices { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; margin: 0 0 10px; padding: 0; border: 0; }
+.art-interest-choice { display: flex; min-height: 42px; align-items: center; gap: 8px; padding: 9px 10px; border: 1px solid #dedbd2; border-radius: 4px; color: #42453e; cursor: pointer; font-size: 11px; transition: border-color 160ms ease, background 160ms ease; }
+.art-interest-choice:has(input:checked) { border-color: #304b42; background: #f0f2ed; }
+.art-interest-choice:has(input:disabled) { cursor: default; opacity: .48; }
+.art-interest-choice input { margin: 0; accent-color: #304b42; }
+.interest-count { min-height: 18px; margin: 0 0 12px; color: #77796f; font-size: 11px; }
+.art-interest-onboarding .auth-submit { margin-top: 0; }
+@media(max-width: 420px) { .art-interest-choices { grid-template-columns: 1fr; } }
 
 /* Keep server-rendered form errors visible on auth endpoints, too. */
 .auth-page .auth-status:not(:empty) {
