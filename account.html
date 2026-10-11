@@ -110,6 +110,7 @@
                 <strong>Delete account</strong>
                 <p class="auth-description">Accounts with pending orders cannot be deleted.</p>
                 <button id="delete-account" class="danger-button" type="button">Delete my account</button>
+                <p class="profile-status" id="delete-status" role="alert" aria-live="assertive"></p>
             </div>
         </section>
     </main>
@@ -117,6 +118,7 @@
     <script>
         const onboarding = document.getElementById('persona-onboarding');
         const interestOnboarding = document.getElementById('art-interest-onboarding');
+        const deleteStatus = document.getElementById('delete-status');
         const savedPersona = '{{persona}}';
         if (new URLSearchParams(window.location.search).get('welcome') === '1' || !savedPersona) {
             onboarding.hidden = false;
@@ -225,19 +227,24 @@
         });
         document.getElementById('delete-account').addEventListener('click', async () => {
             if (!confirm('Delete your account permanently? This cannot be undone.')) return;
-            const response = await fetch('/api/auth/delete', {
-                method: 'POST',
-                headers: {'Content-Type': 'application/json'},
-                credentials: 'same-origin',
-                body: '{}'
-            });
-            const result = await response.json().catch(() => ({}));
-            if (!response.ok) {
-                profileStatus.className = 'profile-status error';
-                profileStatus.textContent = result.error || 'Unable to delete your account.';
-                return;
+            deleteStatus.className = 'profile-status';
+            deleteStatus.textContent = 'Checking for pending transactions…';
+            try {
+                const response = await fetch('/api/auth/delete', {
+                    method: 'POST',
+                    headers: {'Content-Type': 'application/json'},
+                    credentials: 'same-origin',
+                    body: '{}'
+                });
+                const result = await response.json().catch(() => ({}));
+                if (!response.ok) {
+                    throw new Error(result.error || 'Unable to delete your account.');
+                }
+                window.location.assign('/login.html?deleted=1');
+            } catch (error) {
+                deleteStatus.className = 'profile-status error';
+                deleteStatus.textContent = error.message;
             }
-            window.location.assign('/login.html?deleted=1');
         });
     </script>
 </body>

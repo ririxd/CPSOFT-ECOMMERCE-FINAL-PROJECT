@@ -947,7 +947,7 @@ class AuthApp:
                             WHERE listed_items.seller_id = ? AND checkouts.fulfillment_status <> 'delivered'
                             LIMIT 1''', (account_id,)).fetchone()
                 if pending:
-                    raise RequestError(409, 'You cannot delete an account with pending orders.')
+                    raise RequestError(409, 'You cannot delete an account while you have a pending transaction or order.')
                 with db:
                     checkout_ids = [row['id'] for row in db.execute('''SELECT DISTINCT checkouts.id
                         FROM checkouts
