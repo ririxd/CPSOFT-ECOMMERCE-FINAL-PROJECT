@@ -223,6 +223,8 @@ class AuthTests(unittest.TestCase):
         db.close()
         cart = self.request('/api/buyer/cart', {'item_id': item_id, 'quantity': 2}, cookie=cookie)
         self.assertEqual(cart['status'], 200)
+        cart_data = json.loads(cart['body'])
+        self.assertEqual(cart_data['cart'][0]['payment_details'], 'Bank: 123456')
         checkout = self.request('/api/buyer/checkout',
                                 {'payment_method': 'online', 'payment_reference': 'TX-123'},
                                 cookie=cookie)

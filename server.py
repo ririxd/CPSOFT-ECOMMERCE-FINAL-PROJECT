@@ -549,7 +549,7 @@ class AuthApp:
     def buyer_data(self, db, account_id):
         rows = db.execute('''SELECT cart_items.item_id, cart_items.quantity,
             listed_items.title, listed_items.price_cents, listed_items.inventory,
-            listed_items.images, sellers.display_name
+            listed_items.images, sellers.display_name, sellers.payment_details
             FROM cart_items JOIN listed_items ON listed_items.id = cart_items.item_id
             JOIN sellers ON sellers.id = listed_items.seller_id
             WHERE cart_items.buyer_id = ? ORDER BY cart_items.created_at DESC''',
