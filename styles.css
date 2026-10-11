@@ -33,6 +33,7 @@ button::after, .button-dark::after, .artist-cta::after, .add-to-bag::after, .cat
     background: currentColor;
     content: "";
     opacity: 0;
+    pointer-events: none;
     transform: scaleX(0);
     transition: opacity .25s ease, transform .25s ease;
 }
