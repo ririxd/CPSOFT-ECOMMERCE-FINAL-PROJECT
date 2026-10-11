@@ -71,6 +71,7 @@ PUBLIC_FILES = {
 }
 AUTH_PATHS = {'/api/auth/register', '/api/auth/login', '/api/auth/logout',
               '/api/auth/delete',
+              '/api/auth/profile',
               '/api/auth/register/resend', '/api/auth/register/verify',
               '/api/auth/profile/persona',
               '/api/auth/password-reset/request', '/api/auth/password-reset/confirm'}
@@ -340,6 +341,12 @@ class AuthApp:
                     db.execute("""ALTER TABLE users ADD COLUMN persona TEXT CHECK
                         (persona IS NULL OR persona IN
                         ('artist', 'collector', 'enthusiast', 'interior-designer', 'gallery-professional'))""")
+                if 'nickname' not in user_columns:
+                    db.execute("ALTER TABLE users ADD COLUMN nickname TEXT NOT NULL DEFAULT ''")
+                if 'profile_details' not in user_columns:
+                    db.execute("ALTER TABLE users ADD COLUMN profile_details TEXT NOT NULL DEFAULT ''")
+                if 'profile_picture' not in user_columns:
+                    db.execute("ALTER TABLE users ADD COLUMN profile_picture TEXT NOT NULL DEFAULT ''")
                 item_columns = {row['name'] for row in db.execute('PRAGMA table_info(listed_items)').fetchall()}
                 if 'low_stock_threshold' not in item_columns:
                     db.execute('ALTER TABLE listed_items ADD COLUMN low_stock_threshold INTEGER NOT NULL DEFAULT 3')
@@ -396,10 +403,16 @@ class AuthApp:
                 + ('; Secure' if self.secure else ''))
 
     def user(self, db, environ):
-        row = db.execute('''SELECT users.id, users.username, users.email, users.persona FROM sessions
+        row = db.execute('''SELECT users.* FROM sessions
             JOIN users ON users.id = sessions.user_id WHERE token_hash = ? AND expires > ?''',
                          (digest(self.token(environ)), now_ms())).fetchone()
-        return dict(row) if row else None
+        if not row:
+            return None
+        user = dict(row)
+        user.setdefault('nickname', '')
+        user.setdefault('profile_details', '')
+        user.setdefault('profile_picture', '')
+        return user
 
     def issue_session(self, db, environ, user_id):
         token = secrets.token_hex(32)
@@ -870,6 +883,11 @@ class AuthApp:
         if path.startswith('/api/seller/'):
             return self.dispatch_seller_api(environ, db, path, method)
         if path in AUTH_PATHS:
+            if path == '/api/auth/profile' and method == 'GET':
+                user = self.user(db, environ)
+                if not user:
+                    raise RequestError(401, 'Please log in to view your profile.')
+                return 200, {'user': user}, []
             if method != 'POST':
                 raise RequestError(405, 'Use POST.')
             # Browser form submissions must be same-origin. On Vercel, users
@@ -881,6 +899,33 @@ class AuthApp:
             if environ.get('HTTP_ORIGIN') not in (self.origin, request_origin):
                 raise RequestError(403, 'Request origin is not allowed.')
             form = environ.get('CONTENT_TYPE', '').split(';')[0].strip() == 'application/x-www-form-urlencoded'
+            if path == '/api/auth/profile':
+                user = self.user(db, environ)
+                if not user:
+                    raise RequestError(401, 'Please log in to update your profile.')
+                data = self.read_body(environ, form, max_length=3 * 1024 * 1024)
+                nickname = data.get('nickname', '')
+                details = data.get('profile_details', '')
+                picture = data.get('profile_picture', '')
+                if (not isinstance(nickname, str) or len(nickname.strip()) > 80
+                        or not isinstance(details, str) or len(details.strip()) > 2000):
+                    raise RequestError(400, 'Keep your nickname under 80 characters and details under 2000 characters.')
+                if not isinstance(picture, str) or len(picture) > 2_100_000:
+                    raise RequestError(413, 'Profile pictures must be 1.5 MB or smaller.')
+                if picture:
+                    if not picture.startswith('data:image/') or ';base64,' not in picture:
+                        raise RequestError(400, 'Choose a valid profile image.')
+                    try:
+                        decoded = base64.b64decode(picture.split(';base64,', 1)[1], validate=True)
+                    except (ValueError, binascii.Error):
+                        raise RequestError(400, 'Choose a valid profile image.')
+                    if not decoded or len(decoded) > 1_500_000:
+                        raise RequestError(413, 'Profile pictures must be 1.5 MB or smaller.')
+                with db:
+                    db.execute('''UPDATE users SET nickname = ?, profile_details = ?,
+                        profile_picture = ? WHERE id = ?''',
+                               (nickname.strip(), details.strip(), picture, user['id']))
+                return 200, {'message': 'Profile updated.'}, []
             if path == '/api/auth/delete':
                 user = self.user(db, environ)
                 if not user:
@@ -1145,8 +1190,6 @@ class AuthApp:
             user = self.user(db, environ)
             if not user:
                 return 302, '', [('Location', '/login.html')]
-            if user.get('persona') == 'artist':
-                return 302, '', [('Location', '/seller-dashboard.html')]
             return 200, self.render('account.html', **{**user, 'persona': user.get('persona') or ''}), []
         if path == '/seller-dashboard.html':
             user = self.user(db, environ)
