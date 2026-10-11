@@ -119,3 +119,17 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
     .auth-submit, .danger-button { width: 100%; }
     .story-modal-card { padding: 24px 18px; }
 }
+@media (max-width: 480px) {
+    .container { width: 100%; padding-left: 16px; padding-right: 16px; }
+    .auth-nav { gap: 10px; }
+    .navbar-brand { flex: 0 0 auto; }
+    .auth-back { max-width: 58%; }
+    .auth-layout { gap: 20px; }
+    .auth-card { padding: 18px 14px; }
+    .auth-card h2 { font-size: 24px; line-height: 1.2; }
+    .auth-intro h1 { line-height: 1.05; }
+    .profile-picture { width: 84px; height: 84px; }
+    .profile-editor, .danger-zone { margin-top: 22px; padding-top: 18px; }
+    .persona-choice, .art-interest-choice { min-width: 0; }
+    .profile-form button, .persona-onboarding button, .art-interest-onboarding button { width: 100%; }
+}
