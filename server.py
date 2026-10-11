@@ -70,6 +70,7 @@ PUBLIC_FILES = {
        for name in ('script', 'plugins', 'jquery-1.11.0.min')},
 }
 AUTH_PATHS = {'/api/auth/register', '/api/auth/login', '/api/auth/logout',
+              '/api/auth/delete',
               '/api/auth/register/resend', '/api/auth/register/verify',
               '/api/auth/profile/persona',
               '/api/auth/password-reset/request', '/api/auth/password-reset/confirm'}
@@ -513,7 +514,11 @@ class AuthApp:
             })
             order['items'].append({'item_id': row['item_id'], 'title': row['item_title'],
                                    'quantity': row['quantity'], 'unit_price_cents': row['unit_price_cents']})
-        return {'products': products, 'orders': list(orders_by_id.values()), 'movements': movements}
+        orders = list(orders_by_id.values())
+        return {'products': products,
+                'orders': [order for order in orders if order['fulfillment_status'] != 'delivered'],
+                'completed_orders': [order for order in orders if order['fulfillment_status'] == 'delivered'],
+                'movements': movements}
 
     @staticmethod
     def account_id_for_user(db, user):
@@ -592,7 +597,10 @@ class AuthApp:
                                    'quantity': row['quantity'],
                                    'unit_price_cents': row['unit_price_cents'],
                                    'images': images})
-        return {'cart': cart, 'orders': list(grouped.values())}
+        orders = list(grouped.values())
+        return {'cart': cart,
+                'orders': [order for order in orders if order['fulfillment_status'] != 'delivered'],
+                'completed_orders': [order for order in orders if order['fulfillment_status'] == 'delivered']}
 
     def dispatch_buyer_api(self, environ, db, path, method):
         if path == '/api/catalog' and method in ('GET', 'HEAD'):
@@ -840,6 +848,10 @@ class AuthApp:
                     (checkout_id, seller_id)).fetchone()
                 if not owns_order:
                     raise RequestError(404, 'Order not found.')
+                current = db.execute('SELECT fulfillment_status FROM checkouts WHERE id = ?',
+                                     (checkout_id,)).fetchone()
+                if not current or current['fulfillment_status'] == 'delivered':
+                    raise RequestError(409, 'Delivered orders are already completed and cannot be updated.')
                 db.execute('UPDATE checkouts SET fulfillment_status = ? WHERE id = ?',
                            (fulfillment_status, checkout_id))
             return 200, {'message': 'Order status updated.'}, []
@@ -869,6 +881,48 @@ class AuthApp:
             if environ.get('HTTP_ORIGIN') not in (self.origin, request_origin):
                 raise RequestError(403, 'Request origin is not allowed.')
             form = environ.get('CONTENT_TYPE', '').split(';')[0].strip() == 'application/x-www-form-urlencoded'
+            if path == '/api/auth/delete':
+                user = self.user(db, environ)
+                if not user:
+                    raise RequestError(401, 'Please log in to delete your account.')
+                account = db.execute('SELECT account_id FROM account_credentials WHERE email = ?',
+                                     (user['email'],)).fetchone()
+                if not account:
+                    raise RequestError(404, 'Your account profile could not be found.')
+                account_id = account['account_id']
+                pending = db.execute('''SELECT 1 FROM checkouts
+                    WHERE buyer_id = ? AND fulfillment_status <> 'delivered'
+                    LIMIT 1''', (account_id,)).fetchone()
+                if not pending:
+                    seller = db.execute('SELECT id FROM sellers WHERE id = ?', (account_id,)).fetchone()
+                    if seller:
+                        pending = db.execute('''SELECT 1 FROM checkouts
+                            JOIN checkout_items ON checkout_items.checkout_id = checkouts.id
+                            JOIN listed_items ON listed_items.id = checkout_items.item_id
+                            WHERE listed_items.seller_id = ? AND checkouts.fulfillment_status <> 'delivered'
+                            LIMIT 1''', (account_id,)).fetchone()
+                if pending:
+                    raise RequestError(409, 'You cannot delete an account with pending orders.')
+                with db:
+                    checkout_ids = [row['id'] for row in db.execute('''SELECT DISTINCT checkouts.id
+                        FROM checkouts
+                        LEFT JOIN checkout_items ON checkout_items.checkout_id = checkouts.id
+                        LEFT JOIN listed_items ON listed_items.id = checkout_items.item_id
+                        WHERE checkouts.buyer_id = ? OR listed_items.seller_id = ?''',
+                        (account_id, account_id)).fetchall()]
+                    for checkout_id in checkout_ids:
+                        db.execute('DELETE FROM checkout_items WHERE checkout_id = ?', (checkout_id,))
+                        db.execute('DELETE FROM checkouts WHERE id = ?', (checkout_id,))
+                    db.execute('DELETE FROM cart_items WHERE buyer_id = ?', (account_id,))
+                    db.execute('DELETE FROM inventory_movements WHERE seller_id = ?', (account_id,))
+                    db.execute('DELETE FROM listed_items WHERE seller_id = ?', (account_id,))
+                    db.execute('DELETE FROM sellers WHERE id = ?', (account_id,))
+                    db.execute('DELETE FROM account_credentials WHERE account_id = ?', (account_id,))
+                    db.execute('DELETE FROM registered_accounts WHERE id = ?', (account_id,))
+                    db.execute('DELETE FROM sessions WHERE user_id = ?', (user['id'],))
+                    db.execute('DELETE FROM users WHERE id = ?', (user['id'],))
+                headers = [('Set-Cookie', self.cookie('', 0))]
+                return (303, '', headers + [('Location', '/login.html?deleted=1')]) if form else (200, {'ok': True}, headers)
             if path == '/api/auth/register':
                 data = self.read_body(environ, form)
                 email = data.get('email', '')
@@ -1133,6 +1187,8 @@ class AuthApp:
                     and path in AUTH_PATHS):
                 if path == '/api/auth/register':
                     body = self.render('register.html', error=error.message)
+                elif path == '/api/auth/login':
+                    body = self.render('login.html', error=error.message)
                 elif path == '/api/auth/register/verify':
                     body = self.render('verify-email.html', email='', error=error.message)
         except Exception:

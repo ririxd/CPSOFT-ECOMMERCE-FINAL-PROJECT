@@ -235,7 +235,9 @@ class AuthTests(unittest.TestCase):
         db.close()
         orders = self.request('/api/buyer/cart', cookie=cookie)
         self.assertEqual(orders['status'], 200)
-        self.assertEqual(json.loads(orders['body'])['orders'][0]['fulfillment_status'], 'delivered')
+        buyer_orders = json.loads(orders['body'])
+        self.assertEqual(buyer_orders['orders'], [])
+        self.assertEqual(buyer_orders['completed_orders'][0]['fulfillment_status'], 'delivered')
 
 
 if __name__ == '__main__':
