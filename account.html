@@ -35,7 +35,7 @@
                 <form id="persona-form">
                     <fieldset class="persona-choices">
                         <legend class="visually-hidden">Choose your role</legend>
-                        <label class="persona-choice"><input type="radio" name="persona" value="artist" required><span><strong>Artist or maker</strong><small>I create art and want to share or sell my work.</small></span></label>
+                        <label class="persona-choice"><input type="radio" name="persona" value="artist" required><span><strong>Creator or seller</strong><small>I create, make, or sell art and want to manage my products.</small></span></label>
                         <label class="persona-choice"><input type="radio" name="persona" value="collector" required><span><strong>Art collector</strong><small>I collect original works, prints, or emerging artists.</small></span></label>
                         <label class="persona-choice"><input type="radio" name="persona" value="enthusiast" required><span><strong>Art enthusiast</strong><small>I enjoy discovering art and learning about artists.</small></span></label>
                         <label class="persona-choice"><input type="radio" name="persona" value="interior-designer" required><span><strong>Interior designer or stylist</strong><small>I source art for homes, spaces, or client projects.</small></span></label>
@@ -105,6 +105,10 @@
                 });
                 const result = await response.json();
                 if (!response.ok) throw new Error(result.error || 'Could not save your choice.');
+                if (result.redirect) {
+                    window.location.assign(result.redirect);
+                    return;
+                }
                 onboarding.hidden = true;
                 interestOnboarding.hidden = false;
                 document.getElementById('interest-choices')?.focus();

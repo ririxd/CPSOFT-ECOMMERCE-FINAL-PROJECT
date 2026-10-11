@@ -13,6 +13,7 @@ import smtplib
 import ssl
 import sqlite3
 import time
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from contextlib import closing
 from http import HTTPStatus
 from http.cookies import SimpleCookie, CookieError
@@ -262,6 +263,7 @@ class AuthApp:
                     description TEXT NOT NULL DEFAULT '',
                     price_cents INTEGER NOT NULL CHECK (price_cents >= 0),
                     inventory INTEGER NOT NULL DEFAULT 0 CHECK (inventory >= 0),
+                    low_stock_threshold INTEGER NOT NULL DEFAULT 3 CHECK (low_stock_threshold >= 0),
                     status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'active', 'archived')),
                     created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
                 );
@@ -270,6 +272,8 @@ class AuthApp:
                     buyer_id INTEGER NOT NULL REFERENCES registered_accounts(id),
                     status TEXT NOT NULL DEFAULT 'pending'
                         CHECK (status IN ('pending', 'paid', 'cancelled', 'refunded')),
+                    payment_method TEXT NOT NULL DEFAULT 'online' CHECK (payment_method IN ('online', 'cod')),
+                    payment_reference TEXT NOT NULL DEFAULT '', paid_at INTEGER,
                     total_cents INTEGER NOT NULL CHECK (total_cents >= 0),
                     created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
                 );
@@ -280,6 +284,16 @@ class AuthApp:
                     unit_price_cents INTEGER NOT NULL CHECK (unit_price_cents >= 0),
                     PRIMARY KEY (checkout_id, item_id)
                 );
+                CREATE TABLE IF NOT EXISTS inventory_movements (
+                    id INTEGER PRIMARY KEY, seller_id INTEGER NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
+                    item_id INTEGER NOT NULL REFERENCES listed_items(id) ON DELETE CASCADE,
+                    checkout_id INTEGER REFERENCES checkouts(id) ON DELETE SET NULL,
+                    quantity_delta INTEGER NOT NULL CHECK (quantity_delta <> 0),
+                    reason TEXT NOT NULL CHECK (reason IN ('opening_stock', 'stock_adjustment', 'sale')),
+                    note TEXT NOT NULL DEFAULT '', created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
+                );
+                CREATE INDEX IF NOT EXISTS inventory_movements_seller_created
+                    ON inventory_movements (seller_id, created_at DESC);
                 CREATE TABLE IF NOT EXISTS login_events (
                     id INTEGER PRIMARY KEY,
                     account_id INTEGER REFERENCES registered_accounts(id) ON DELETE SET NULL,
@@ -311,6 +325,16 @@ class AuthApp:
                     db.execute("""ALTER TABLE users ADD COLUMN persona TEXT CHECK
                         (persona IS NULL OR persona IN
                         ('artist', 'collector', 'enthusiast', 'interior-designer', 'gallery-professional'))""")
+                item_columns = {row['name'] for row in db.execute('PRAGMA table_info(listed_items)').fetchall()}
+                if 'low_stock_threshold' not in item_columns:
+                    db.execute('ALTER TABLE listed_items ADD COLUMN low_stock_threshold INTEGER NOT NULL DEFAULT 3')
+                checkout_columns = {row['name'] for row in db.execute('PRAGMA table_info(checkouts)').fetchall()}
+                if 'payment_method' not in checkout_columns:
+                    db.execute("ALTER TABLE checkouts ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'online'")
+                if 'payment_reference' not in checkout_columns:
+                    db.execute("ALTER TABLE checkouts ADD COLUMN payment_reference TEXT NOT NULL DEFAULT ''")
+                if 'paid_at' not in checkout_columns:
+                    db.execute('ALTER TABLE checkouts ADD COLUMN paid_at INTEGER')
 
     def connect(self):
         if self.postgres:
@@ -400,6 +424,184 @@ class AuthApp:
         except (ValueError, UnicodeError):
             raise RequestError(400, 'Invalid form data.')
 
+    @staticmethod
+    def seller_for_user(db, user):
+        return db.execute('''SELECT sellers.id, sellers.display_name, sellers.bio
+            FROM sellers JOIN account_credentials ON account_credentials.account_id = sellers.id
+            WHERE account_credentials.email = ?''', (user['email'],)).fetchone()
+
+    @staticmethod
+    def create_seller_for_user(db, user):
+        account = db.execute('SELECT account_id FROM account_credentials WHERE email = ?',
+                             (user['email'],)).fetchone()
+        if account:
+            account_id = account['account_id']
+            db.execute("UPDATE registered_accounts SET account_type = 'seller' WHERE id = ?", (account_id,))
+        else:
+            account_id = db.execute("INSERT INTO registered_accounts (account_type) VALUES ('seller') RETURNING id").fetchone()['id']
+            db.execute('''INSERT INTO account_credentials
+                (account_id, username, email, password_salt, password_hash)
+                SELECT ?, username, email, salt, password_hash FROM users WHERE id = ?''',
+                       (account_id, user['id']))
+        db.execute('''INSERT INTO sellers (id, display_name) VALUES (?, ?)
+            ON CONFLICT(id) DO NOTHING''', (account_id, user['username']))
+
+    @staticmethod
+    def seller_dashboard_data(db, seller_id):
+        products = [dict(row) for row in db.execute('''SELECT id, title, description,
+            price_cents, inventory, low_stock_threshold, status, created_at FROM listed_items
+            WHERE seller_id = ? ORDER BY created_at DESC, id DESC''', (seller_id,)).fetchall()]
+        movements = [dict(row) for row in db.execute('''SELECT inventory_movements.id,
+            inventory_movements.item_id, listed_items.title AS item_title, checkout_id,
+            quantity_delta, reason, note, created_at FROM inventory_movements
+            JOIN listed_items ON listed_items.id = inventory_movements.item_id
+            WHERE inventory_movements.seller_id = ? ORDER BY created_at DESC, id DESC LIMIT 250''',
+            (seller_id,)).fetchall()]
+        order_rows = db.execute('''SELECT checkouts.id, checkouts.status, checkouts.total_cents,
+            checkouts.payment_method, checkouts.payment_reference, checkouts.created_at,
+            checkouts.paid_at, checkout_items.item_id, checkout_items.quantity,
+            checkout_items.unit_price_cents, listed_items.title AS item_title
+            FROM checkouts JOIN checkout_items ON checkout_items.checkout_id = checkouts.id
+            JOIN listed_items ON listed_items.id = checkout_items.item_id
+            WHERE listed_items.seller_id = ? ORDER BY checkouts.created_at DESC, checkouts.id DESC''',
+            (seller_id,)).fetchall()
+        orders_by_id = {}
+        for row in order_rows:
+            order = orders_by_id.setdefault(row['id'], {
+                'id': row['id'], 'status': row['status'], 'total_cents': row['total_cents'],
+                'payment_method': row['payment_method'], 'payment_reference': row['payment_reference'],
+                'created_at': row['created_at'], 'paid_at': row['paid_at'], 'items': []
+            })
+            order['items'].append({'item_id': row['item_id'], 'title': row['item_title'],
+                                   'quantity': row['quantity'], 'unit_price_cents': row['unit_price_cents']})
+        return {'products': products, 'orders': list(orders_by_id.values()), 'movements': movements}
+
+    def dispatch_seller_api(self, environ, db, path, method):
+        user = self.user(db, environ)
+        if not user:
+            raise RequestError(401, 'Please log in to access the seller dashboard.')
+        if user.get('persona') != 'artist':
+            raise RequestError(403, 'Choose Creator or seller in your account setup to access this dashboard.')
+        seller = self.seller_for_user(db, user)
+        if not seller:
+            with db:
+                self.create_seller_for_user(db, user)
+            seller = self.seller_for_user(db, user)
+        if not seller:
+            raise RequestError(403, 'A seller profile is not available for this account.')
+        seller_id = seller['id']
+        if path == '/api/seller/dashboard' and method in ('GET', 'HEAD'):
+            return 200, {'seller': dict(seller), **self.seller_dashboard_data(db, seller_id)}, []
+        if method != 'POST':
+            raise RequestError(405, 'Use POST for seller updates.')
+        request_host = environ.get('HTTP_HOST', '').strip()
+        request_scheme = 'https' if self.secure else environ.get('wsgi.url_scheme', 'http')
+        request_origin = f'{request_scheme}://{request_host}' if request_host else None
+        if environ.get('HTTP_ORIGIN') not in (self.origin, request_origin):
+            raise RequestError(403, 'Request origin is not allowed.')
+        data = self.read_body(environ, False)
+        if path == '/api/seller/products':
+            title = data.get('title', '')
+            description = data.get('description', '')
+            try:
+                cents = int((Decimal(str(data.get('price', ''))) * 100).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
+                stock = int(data.get('inventory', 0))
+                threshold = int(data.get('low_stock_threshold', 3))
+            except (InvalidOperation, ValueError, TypeError):
+                raise RequestError(400, 'Enter a valid price, stock amount, and low-stock threshold.')
+            if (not isinstance(title, str) or not title.strip() or len(title.strip()) > 120
+                    or not isinstance(description, str) or len(description) > 2000
+                    or cents < 1 or stock < 0 or stock > 1_000_000 or threshold < 0 or threshold > 1_000_000):
+                raise RequestError(400, 'Check the product name, description, price, and stock values.')
+            with db:
+                item_id = db.execute('''INSERT INTO listed_items
+                    (seller_id, title, description, price_cents, inventory, low_stock_threshold, status)
+                    VALUES (?, ?, ?, ?, ?, ?, 'active') RETURNING id''',
+                    (seller_id, title.strip(), description.strip(), cents, stock, threshold)).fetchone()['id']
+                if stock:
+                    db.execute('''INSERT INTO inventory_movements
+                        (seller_id, item_id, quantity_delta, reason, note, created_at)
+                        VALUES (?, ?, ?, 'opening_stock', 'Initial product stock', ?)''',
+                        (seller_id, item_id, stock, now_ms()))
+            return 201, {'message': 'Product added.', 'item_id': item_id}, []
+        stock_match = re.fullmatch(r'/api/seller/products/(\d+)/stock', path)
+        if stock_match:
+            item_id = int(stock_match.group(1))
+            try:
+                delta = int(data.get('quantity_delta'))
+            except (ValueError, TypeError):
+                raise RequestError(400, 'Enter a nonzero whole-number stock adjustment.')
+            note = data.get('note', '')
+            if delta == 0 or abs(delta) > 1_000_000 or not isinstance(note, str) or len(note) > 240:
+                raise RequestError(400, 'Enter a valid stock adjustment and note.')
+            with db:
+                item = db.execute('SELECT inventory FROM listed_items WHERE id = ? AND seller_id = ?',
+                                  (item_id, seller_id)).fetchone()
+                if not item:
+                    raise RequestError(404, 'Product not found.')
+                updated = db.execute('''UPDATE listed_items SET inventory = inventory + ?
+                    WHERE id = ? AND seller_id = ? AND inventory + ? >= 0''',
+                    (delta, item_id, seller_id, delta))
+                if updated.rowcount != 1:
+                    raise RequestError(409, 'Stock cannot go below zero. Refresh and try again.')
+                db.execute('''INSERT INTO inventory_movements
+                    (seller_id, item_id, quantity_delta, reason, note, created_at)
+                    VALUES (?, ?, ?, 'stock_adjustment', ?, ?)''',
+                    (seller_id, item_id, delta, note.strip(), now_ms()))
+            return 200, {'message': 'Stock updated.'}, []
+        threshold_match = re.fullmatch(r'/api/seller/products/(\d+)/threshold', path)
+        if threshold_match:
+            item_id = int(threshold_match.group(1))
+            try:
+                threshold = int(data.get('low_stock_threshold'))
+            except (ValueError, TypeError):
+                raise RequestError(400, 'Enter a valid low-stock threshold.')
+            if threshold < 0 or threshold > 1_000_000:
+                raise RequestError(400, 'Enter a valid low-stock threshold.')
+            with db:
+                updated = db.execute('''UPDATE listed_items SET low_stock_threshold = ?
+                    WHERE id = ? AND seller_id = ?''', (threshold, item_id, seller_id))
+                if updated.rowcount != 1:
+                    raise RequestError(404, 'Product not found.')
+            return 200, {'message': 'Low-stock threshold updated.'}, []
+        order_match = re.fullmatch(r'/api/seller/orders/(\d+)/verify', path)
+        if order_match:
+            checkout_id = int(order_match.group(1))
+            if data.get('confirmed') is not True:
+                raise RequestError(400, 'Confirm that the online payment or cash-on-delivery amount was received.')
+            with db:
+                checkout = db.execute('SELECT status, payment_method FROM checkouts WHERE id = ?',
+                                      (checkout_id,)).fetchone()
+                if not checkout:
+                    raise RequestError(404, 'Order not found.')
+                if checkout['status'] == 'paid':
+                    raise RequestError(409, 'This order is already paid.')
+                if checkout['status'] != 'pending':
+                    raise RequestError(409, 'Only pending orders can be marked paid.')
+                lines = db.execute('''SELECT checkout_items.item_id, checkout_items.quantity,
+                    listed_items.seller_id, listed_items.inventory FROM checkout_items
+                    JOIN listed_items ON listed_items.id = checkout_items.item_id
+                    WHERE checkout_items.checkout_id = ?''', (checkout_id,)).fetchall()
+                if not lines or any(line['seller_id'] != seller_id for line in lines):
+                    raise RequestError(403, 'Only orders containing products from this seller can be verified.')
+                updated = db.execute('''UPDATE checkouts SET status = 'paid', paid_at = ?
+                    WHERE id = ? AND status = 'pending' ''', (now_ms(), checkout_id))
+                if updated.rowcount != 1:
+                    raise RequestError(409, 'This order has already changed. Refresh and try again.')
+                for line in lines:
+                    changed = db.execute('''UPDATE listed_items SET inventory = inventory - ?
+                        WHERE id = ? AND seller_id = ? AND inventory >= ?''',
+                        (line['quantity'], line['item_id'], seller_id, line['quantity']))
+                    if changed.rowcount != 1:
+                        raise RequestError(409, 'The order cannot be completed because stock is insufficient.')
+                    db.execute('''INSERT INTO inventory_movements
+                        (seller_id, item_id, checkout_id, quantity_delta, reason, note, created_at)
+                        VALUES (?, ?, ?, ?, 'sale', ?, ?)''',
+                        (seller_id, line['item_id'], checkout_id, -line['quantity'],
+                         f"Paid {checkout['payment_method']} order #{checkout_id}", now_ms()))
+            return 200, {'message': 'Payment confirmed and order marked paid. Stock was deducted.'}, []
+        raise RequestError(404, 'Seller action not found.')
+
     def dispatch(self, environ, db):
         path = environ.get('PATH_INFO', '/')
         method = environ['REQUEST_METHOD']
@@ -408,6 +610,8 @@ class AuthApp:
         if path == '/api/auth/me' and method in ('GET', 'HEAD'):
             user = self.user(db, environ)
             return (200, {'user': user}, []) if user else (401, {'error': 'Please log in.'}, [])
+        if path.startswith('/api/seller/'):
+            return self.dispatch_seller_api(environ, db, path, method)
         if path in AUTH_PATHS:
             if method != 'POST':
                 raise RequestError(405, 'Use POST.')
@@ -540,9 +744,12 @@ class AuthApp:
                     raise RequestError(400, 'Choose one of the listed art-market roles.')
                 with db:
                     db.execute('UPDATE users SET persona = ? WHERE id = ?', (persona, user['id']))
+                    if persona == 'artist':
+                        self.create_seller_for_user(db, user)
                 if form:
                     return 303, '', [('Location', '/account.html')]
-                return 200, {'message': 'Your Art House profile is ready.', 'persona': persona}, []
+                return 200, {'message': 'Your Art House profile is ready.', 'persona': persona,
+                             'redirect': '/seller-dashboard.html' if persona == 'artist' else None}, []
             if path.endswith('/password-reset/request'):
                 data = self.read_body(environ, form)
                 email = data.get('email', '')
@@ -639,7 +846,20 @@ class AuthApp:
             user = self.user(db, environ)
             if not user:
                 return 302, '', [('Location', '/login.html')]
+            if user.get('persona') == 'artist':
+                return 302, '', [('Location', '/seller-dashboard.html')]
             return 200, self.render('account.html', **{**user, 'persona': user.get('persona') or ''}), []
+        if path == '/seller-dashboard.html':
+            user = self.user(db, environ)
+            if not user:
+                return 302, '', [('Location', '/login.html')]
+            if user.get('persona') != 'artist':
+                return 302, '', [('Location', '/account.html')]
+            seller = self.seller_for_user(db, user)
+            if not seller:
+                with db:
+                    self.create_seller_for_user(db, user)
+            return 200, self.render('seller-dashboard.html', username=user['username']), []
         if path in PUBLIC_FILES:
             relative_path = 'index.html' if path == '/' else path.lstrip('/')
             asset_path = ROOT / 'public' / relative_path
