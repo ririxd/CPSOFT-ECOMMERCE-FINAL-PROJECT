@@ -54,7 +54,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .artist-cta, .button-dark { background: var(--ink); border: 0; border-radius: 8px; color: #fff; }
 .artist-cta:hover, .button-dark:hover { background: var(--green); color: #fff; }
 .button, .button-dark, .artist-cta, .add-to-bag, .checkout, .auth-submit {
-    color: #fff;
+    color: #fff !important;
 }
 .button:hover, .button:focus-visible,
 .button-dark:hover, .button-dark:focus-visible,
@@ -62,7 +62,7 @@ button:focus-visible, a:focus-visible, input:focus-visible, textarea:focus-visib
 .add-to-bag:hover, .add-to-bag:focus-visible,
 .checkout:hover, .checkout:focus-visible,
 .auth-submit:hover, .auth-submit:focus-visible {
-    color: #fff;
+    color: #fff !important;
 }
 .hero-section { background: radial-gradient(circle at 84% 18%, rgba(189, 104, 70, .12), transparent 30%), var(--paper); }
 .hero-art, .auth-art { box-shadow: var(--shadow); }
