@@ -270,6 +270,7 @@ class AuthApp:
                     inventory INTEGER NOT NULL DEFAULT 0 CHECK (inventory >= 0),
                     low_stock_threshold INTEGER NOT NULL DEFAULT 3 CHECK (low_stock_threshold >= 0),
                     images TEXT NOT NULL DEFAULT '[]',
+                    dimensions TEXT NOT NULL DEFAULT '',
                     status TEXT NOT NULL DEFAULT 'draft' CHECK (status IN ('draft', 'active', 'archived')),
                     created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
                 );
@@ -352,6 +353,8 @@ class AuthApp:
                     db.execute('ALTER TABLE listed_items ADD COLUMN low_stock_threshold INTEGER NOT NULL DEFAULT 3')
                 if 'images' not in item_columns:
                     db.execute("ALTER TABLE listed_items ADD COLUMN images TEXT NOT NULL DEFAULT '[]'")
+                if 'dimensions' not in item_columns:
+                    db.execute("ALTER TABLE listed_items ADD COLUMN dimensions TEXT NOT NULL DEFAULT ''")
                 checkout_columns = {row['name'] for row in db.execute('PRAGMA table_info(checkouts)').fetchall()}
                 if 'payment_method' not in checkout_columns:
                     db.execute("ALTER TABLE checkouts ADD COLUMN payment_method TEXT NOT NULL DEFAULT 'online'")
@@ -494,7 +497,7 @@ class AuthApp:
     @staticmethod
     def seller_dashboard_data(db, seller_id):
         products = [dict(row) for row in db.execute('''SELECT id, title, description,
-            price_cents, inventory, low_stock_threshold, images, status, created_at FROM listed_items
+            price_cents, inventory, low_stock_threshold, images, dimensions, status, created_at FROM listed_items
             WHERE seller_id = ? ORDER BY created_at DESC, id DESC''', (seller_id,)).fetchall()]
         for product in products:
             try:
@@ -548,7 +551,7 @@ class AuthApp:
     def buyer_catalog(db):
         products = db.execute('''SELECT listed_items.id, listed_items.title,
             listed_items.description, listed_items.price_cents, listed_items.inventory,
-            listed_items.images, listed_items.status, sellers.id AS seller_id, sellers.display_name,
+            listed_items.images, listed_items.dimensions, listed_items.status, sellers.id AS seller_id, sellers.display_name,
             sellers.payment_details
             FROM listed_items JOIN sellers ON sellers.id = listed_items.seller_id
             WHERE listed_items.status <> 'archived' ORDER BY listed_items.created_at DESC,
@@ -749,6 +752,7 @@ class AuthApp:
         if path == '/api/seller/products':
             title = data.get('title', '')
             description = data.get('description', '')
+            dimensions = data.get('dimensions', '')
             images = self.validate_product_images(data.get('images'))
             try:
                 cents = int((Decimal(str(data.get('price', ''))) * 100).quantize(Decimal('1'), rounding=ROUND_HALF_UP))
@@ -758,14 +762,15 @@ class AuthApp:
                 raise RequestError(400, 'Enter a valid price, stock amount, and low-stock threshold.')
             if (not isinstance(title, str) or not title.strip() or len(title.strip()) > 120
                     or not isinstance(description, str) or len(description) > 2000
+                    or not isinstance(dimensions, str) or len(dimensions) > 240
                     or cents < 1 or stock < 0 or stock > 1_000_000 or threshold < 0 or threshold > 1_000_000):
                 raise RequestError(400, 'Check the product name, description, price, and stock values.')
             with db:
                 item_id = db.execute('''INSERT INTO listed_items
-                    (seller_id, title, description, price_cents, inventory, low_stock_threshold, images, status)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, 'active') RETURNING id''',
+                    (seller_id, title, description, price_cents, inventory, low_stock_threshold, images, dimensions, status)
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, 'active') RETURNING id''',
                     (seller_id, title.strip(), description.strip(), cents, stock, threshold,
-                     json.dumps(images, separators=(',', ':')))).fetchone()['id']
+                     json.dumps(images, separators=(',', ':')), dimensions.strip())).fetchone()['id']
                 if stock:
                     db.execute('''INSERT INTO inventory_movements
                         (seller_id, item_id, quantity_delta, reason, note, created_at)

@@ -1,0 +1,1 @@
+ALTER TABLE listed_items ADD COLUMN IF NOT EXISTS dimensions TEXT NOT NULL DEFAULT '';
