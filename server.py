@@ -1207,14 +1207,20 @@ class AuthApp:
             if not seller:
                 with db:
                     self.create_seller_for_user(db, user)
-            return 200, self.render('seller-dashboard.html', username=user['username']), []
+            return 200, self.render('seller-dashboard.html',
+                                    username=user['username'],
+                                    display_name=user.get('nickname') or user['username'],
+                                    profile_picture=user.get('profile_picture') or ''), []
         if path == '/buyer-dashboard.html':
             user = self.user(db, environ)
             if not user:
                 return 302, '', [('Location', '/login.html')]
             if user.get('persona') == 'artist':
                 return 302, '', [('Location', '/seller-dashboard.html')]
-            return 200, self.render('buyer-dashboard.html', username=user['username']), []
+            return 200, self.render('buyer-dashboard.html',
+                                    username=user['username'],
+                                    display_name=user.get('nickname') or user['username'],
+                                    profile_picture=user.get('profile_picture') or ''), []
         if path in PUBLIC_FILES:
             relative_path = 'index.html' if path == '/' else path.lstrip('/')
             asset_path = ROOT / 'public' / relative_path
