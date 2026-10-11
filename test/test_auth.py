@@ -209,6 +209,18 @@ class AuthTests(unittest.TestCase):
         db.close()
         cookie = set_cookie[1].split(';')[0]
         self.assertEqual(self.request('/api/catalog')['status'], 200)
+        catalog = json.loads(self.request('/api/catalog')['body'])['products']
+        self.assertEqual(catalog[0]['title'], 'Test print')
+        with sqlite3.connect(self.db_path) as db:
+            db.execute("UPDATE listed_items SET status = 'draft' WHERE id = ?", (item_id,))
+        db.close()
+        catalog = json.loads(self.request('/api/catalog')['body'])['products']
+        self.assertEqual(catalog[0]['status'], 'draft')
+        cart = self.request('/api/buyer/cart', {'item_id': item_id, 'quantity': 2}, cookie=cookie)
+        self.assertEqual(cart['status'], 404)
+        with sqlite3.connect(self.db_path) as db:
+            db.execute("UPDATE listed_items SET status = 'active' WHERE id = ?", (item_id,))
+        db.close()
         cart = self.request('/api/buyer/cart', {'item_id': item_id, 'quantity': 2}, cookie=cookie)
         self.assertEqual(cart['status'], 200)
         checkout = self.request('/api/buyer/checkout',

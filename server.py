@@ -530,10 +530,10 @@ class AuthApp:
     def buyer_catalog(db):
         products = db.execute('''SELECT listed_items.id, listed_items.title,
             listed_items.description, listed_items.price_cents, listed_items.inventory,
-            listed_items.images, sellers.id AS seller_id, sellers.display_name,
+            listed_items.images, listed_items.status, sellers.id AS seller_id, sellers.display_name,
             sellers.payment_details
             FROM listed_items JOIN sellers ON sellers.id = listed_items.seller_id
-            WHERE listed_items.status = 'active' ORDER BY listed_items.created_at DESC,
+            WHERE listed_items.status <> 'archived' ORDER BY listed_items.created_at DESC,
             listed_items.id DESC''').fetchall()
         result = []
         for row in products:
