@@ -256,6 +256,7 @@ class AuthApp:
                     id INTEGER PRIMARY KEY REFERENCES registered_accounts(id) ON DELETE CASCADE,
                     display_name TEXT NOT NULL,
                     bio TEXT NOT NULL DEFAULT '',
+                    payment_details TEXT NOT NULL DEFAULT '',
                     created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
                 );
                 CREATE TABLE IF NOT EXISTS listed_items (
@@ -277,6 +278,8 @@ class AuthApp:
                         CHECK (status IN ('pending', 'paid', 'cancelled', 'refunded')),
                     payment_method TEXT NOT NULL DEFAULT 'online' CHECK (payment_method IN ('online', 'cod')),
                     payment_reference TEXT NOT NULL DEFAULT '', paid_at INTEGER,
+                    fulfillment_status TEXT NOT NULL DEFAULT 'packed'
+                        CHECK (fulfillment_status IN ('packed', 'dispatched', 'delivered')),
                     total_cents INTEGER NOT NULL CHECK (total_cents >= 0),
                     created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000)
                 );
@@ -287,6 +290,14 @@ class AuthApp:
                     unit_price_cents INTEGER NOT NULL CHECK (unit_price_cents >= 0),
                     PRIMARY KEY (checkout_id, item_id)
                 );
+                CREATE TABLE IF NOT EXISTS cart_items (
+                    buyer_id INTEGER NOT NULL REFERENCES registered_accounts(id) ON DELETE CASCADE,
+                    item_id INTEGER NOT NULL REFERENCES listed_items(id) ON DELETE CASCADE,
+                    quantity INTEGER NOT NULL CHECK (quantity > 0),
+                    created_at INTEGER NOT NULL DEFAULT (unixepoch() * 1000),
+                    PRIMARY KEY (buyer_id, item_id)
+                );
+                CREATE INDEX IF NOT EXISTS cart_items_buyer ON cart_items (buyer_id, created_at DESC);
                 CREATE TABLE IF NOT EXISTS inventory_movements (
                     id INTEGER PRIMARY KEY, seller_id INTEGER NOT NULL REFERENCES sellers(id) ON DELETE CASCADE,
                     item_id INTEGER NOT NULL REFERENCES listed_items(id) ON DELETE CASCADE,
@@ -340,6 +351,11 @@ class AuthApp:
                     db.execute("ALTER TABLE checkouts ADD COLUMN payment_reference TEXT NOT NULL DEFAULT ''")
                 if 'paid_at' not in checkout_columns:
                     db.execute('ALTER TABLE checkouts ADD COLUMN paid_at INTEGER')
+                if 'fulfillment_status' not in checkout_columns:
+                    db.execute("ALTER TABLE checkouts ADD COLUMN fulfillment_status TEXT NOT NULL DEFAULT 'packed'")
+                seller_columns = {row['name'] for row in db.execute('PRAGMA table_info(sellers)').fetchall()}
+                if 'payment_details' not in seller_columns:
+                    db.execute("ALTER TABLE sellers ADD COLUMN payment_details TEXT NOT NULL DEFAULT ''")
 
     def connect(self):
         if self.postgres:
@@ -431,7 +447,8 @@ class AuthApp:
 
     @staticmethod
     def seller_for_user(db, user):
-        return db.execute('''SELECT sellers.id, sellers.display_name, sellers.bio
+        return db.execute('''SELECT sellers.id, sellers.display_name, sellers.bio,
+            sellers.payment_details
             FROM sellers JOIN account_credentials ON account_credentials.account_id = sellers.id
             WHERE account_credentials.email = ?''', (user['email'],)).fetchone()
 
@@ -469,7 +486,7 @@ class AuthApp:
             WHERE inventory_movements.seller_id = ? ORDER BY inventory_movements.created_at DESC,
             inventory_movements.id DESC LIMIT 250''',
             (seller_id,)).fetchall()]
-        order_rows = db.execute('''SELECT checkouts.id, checkouts.status, checkouts.total_cents,
+        order_rows = db.execute('''SELECT         checkouts.id, checkouts.status, checkouts.fulfillment_status, checkouts.total_cents,
             checkouts.payment_method, checkouts.payment_reference, checkouts.created_at,
             checkouts.paid_at, checkout_items.item_id, checkout_items.quantity,
             checkout_items.unit_price_cents, listed_items.title AS item_title
@@ -480,13 +497,167 @@ class AuthApp:
         orders_by_id = {}
         for row in order_rows:
             order = orders_by_id.setdefault(row['id'], {
-                'id': row['id'], 'status': row['status'], 'total_cents': row['total_cents'],
+                'id': row['id'], 'status': row['status'],
+                'fulfillment_status': row['fulfillment_status'], 'total_cents': row['total_cents'],
                 'payment_method': row['payment_method'], 'payment_reference': row['payment_reference'],
                 'created_at': row['created_at'], 'paid_at': row['paid_at'], 'items': []
             })
             order['items'].append({'item_id': row['item_id'], 'title': row['item_title'],
                                    'quantity': row['quantity'], 'unit_price_cents': row['unit_price_cents']})
         return {'products': products, 'orders': list(orders_by_id.values()), 'movements': movements}
+
+    @staticmethod
+    def account_id_for_user(db, user):
+        row = db.execute('SELECT account_id FROM account_credentials WHERE email = ?',
+                         (user['email'],)).fetchone()
+        if row:
+            return row['account_id']
+        row = db.execute('''SELECT registered_accounts.id FROM registered_accounts
+            JOIN account_credentials ON account_credentials.account_id = registered_accounts.id
+            WHERE account_credentials.email = ?''', (user['email'],)).fetchone()
+        return row['id'] if row else None
+
+    @staticmethod
+    def buyer_catalog(db):
+        products = db.execute('''SELECT listed_items.id, listed_items.title,
+            listed_items.description, listed_items.price_cents, listed_items.inventory,
+            listed_items.images, sellers.id AS seller_id, sellers.display_name,
+            sellers.payment_details
+            FROM listed_items JOIN sellers ON sellers.id = listed_items.seller_id
+            WHERE listed_items.status = 'active' ORDER BY listed_items.created_at DESC,
+            listed_items.id DESC''').fetchall()
+        result = []
+        for row in products:
+            product = dict(row)
+            try:
+                product['images'] = json.loads(product['images'])
+            except (TypeError, json.JSONDecodeError):
+                product['images'] = []
+            product.pop('payment_details', None)
+            result.append(product)
+        return result
+
+    def buyer_data(self, db, account_id):
+        rows = db.execute('''SELECT cart_items.item_id, cart_items.quantity,
+            listed_items.title, listed_items.price_cents, listed_items.inventory,
+            listed_items.images, sellers.display_name
+            FROM cart_items JOIN listed_items ON listed_items.id = cart_items.item_id
+            JOIN sellers ON sellers.id = listed_items.seller_id
+            WHERE cart_items.buyer_id = ? ORDER BY cart_items.created_at DESC''',
+            (account_id,)).fetchall()
+        cart = []
+        for row in rows:
+            item = dict(row)
+            try:
+                item['images'] = json.loads(item['images'])
+            except (TypeError, json.JSONDecodeError):
+                item['images'] = []
+            cart.append(item)
+        orders = db.execute('''SELECT checkouts.id, checkouts.status,
+            checkouts.fulfillment_status, checkouts.payment_method,
+            checkouts.payment_reference, checkouts.total_cents, checkouts.created_at,
+            sellers.display_name, sellers.payment_details, checkout_items.item_id,
+            checkout_items.quantity, checkout_items.unit_price_cents, listed_items.title,
+            listed_items.images
+            FROM checkouts JOIN checkout_items ON checkout_items.checkout_id = checkouts.id
+            JOIN listed_items ON listed_items.id = checkout_items.item_id
+            JOIN sellers ON sellers.id = listed_items.seller_id
+            WHERE checkouts.buyer_id = ? ORDER BY checkouts.created_at DESC, checkouts.id DESC''',
+            (account_id,)).fetchall()
+        grouped = {}
+        for row in orders:
+            order = grouped.setdefault(row['id'], {
+                'id': row['id'], 'status': row['status'],
+                'fulfillment_status': row['fulfillment_status'],
+                'payment_method': row['payment_method'],
+                'payment_reference': row['payment_reference'],
+                'total_cents': row['total_cents'], 'created_at': row['created_at'],
+                'seller': row['display_name'], 'payment_details': row['payment_details'],
+                'items': []
+            })
+            try:
+                images = json.loads(row['images'])
+            except (TypeError, json.JSONDecodeError):
+                images = []
+            order['items'].append({'item_id': row['item_id'], 'title': row['title'],
+                                   'quantity': row['quantity'],
+                                   'unit_price_cents': row['unit_price_cents'],
+                                   'images': images})
+        return {'cart': cart, 'orders': list(grouped.values())}
+
+    def dispatch_buyer_api(self, environ, db, path, method):
+        if path == '/api/catalog' and method in ('GET', 'HEAD'):
+            return 200, {'products': self.buyer_catalog(db)}, []
+        user = self.user(db, environ)
+        if not user:
+            raise RequestError(401, 'Please log in to use your cart and orders.')
+        if user.get('persona') == 'artist':
+            raise RequestError(403, 'Seller accounts use the creator dashboard.')
+        account_id = self.account_id_for_user(db, user)
+        if not account_id:
+            raise RequestError(403, 'Your buyer profile is not available yet.')
+        if path == '/api/buyer/dashboard' and method in ('GET', 'HEAD'):
+            return 200, {'products': self.buyer_catalog(db), **self.buyer_data(db, account_id)}, []
+        if path == '/api/buyer/cart' and method == 'GET':
+            return 200, self.buyer_data(db, account_id), []
+        if path == '/api/buyer/cart' and method == 'POST':
+            data = self.read_body(environ, False)
+            try:
+                item_id, quantity = int(data.get('item_id')), int(data.get('quantity', 1))
+            except (TypeError, ValueError):
+                raise RequestError(400, 'Choose a valid product and quantity.')
+            if quantity < 0 or quantity > 100:
+                raise RequestError(400, 'Quantity must be between 0 and 100.')
+            with db:
+                item = db.execute('''SELECT id, inventory FROM listed_items
+                    WHERE id = ? AND status = 'active' ''', (item_id,)).fetchone()
+                if not item:
+                    raise RequestError(404, 'Product is not available.')
+                if quantity > item['inventory']:
+                    raise RequestError(409, 'That product does not have enough stock.')
+                if quantity == 0:
+                    db.execute('DELETE FROM cart_items WHERE buyer_id = ? AND item_id = ?',
+                               (account_id, item_id))
+                else:
+                    db.execute('''INSERT INTO cart_items (buyer_id, item_id, quantity)
+                        VALUES (?, ?, ?) ON CONFLICT(buyer_id, item_id)
+                        DO UPDATE SET quantity = excluded.quantity''',
+                               (account_id, item_id, quantity))
+            return 200, self.buyer_data(db, account_id), []
+        if path == '/api/buyer/checkout' and method == 'POST':
+            data = self.read_body(environ, False)
+            payment_method = data.get('payment_method')
+            reference = data.get('payment_reference', '')
+            if payment_method not in ('online', 'cod'):
+                raise RequestError(400, 'Choose cash on delivery or online payment.')
+            if not isinstance(reference, str) or len(reference.strip()) > 120:
+                raise RequestError(400, 'Enter a valid payment reference.')
+            with db:
+                lines = db.execute('''SELECT cart_items.item_id, cart_items.quantity,
+                    listed_items.price_cents, listed_items.inventory, listed_items.seller_id
+                    FROM cart_items JOIN listed_items ON listed_items.id = cart_items.item_id
+                    WHERE cart_items.buyer_id = ?''', (account_id,)).fetchall()
+                if not lines:
+                    raise RequestError(400, 'Your cart is empty.')
+                if any(line['quantity'] > line['inventory'] for line in lines):
+                    raise RequestError(409, 'One or more products no longer have enough stock.')
+                sellers = {line['seller_id'] for line in lines}
+                if len(sellers) != 1:
+                    raise RequestError(400, 'Please check out products from one seller at a time.')
+                total = sum(line['quantity'] * line['price_cents'] for line in lines)
+                checkout_id = db.execute('''INSERT INTO checkouts
+                    (buyer_id, status, payment_method, payment_reference, total_cents)
+                    VALUES (?, 'pending', ?, ?, ?) RETURNING id''',
+                    (account_id, payment_method, reference.strip(), total)).fetchone()['id']
+                for line in lines:
+                    db.execute('''INSERT INTO checkout_items
+                        (checkout_id, item_id, quantity, unit_price_cents)
+                        VALUES (?, ?, ?, ?)''',
+                               (checkout_id, line['item_id'], line['quantity'], line['price_cents']))
+                db.execute('DELETE FROM cart_items WHERE buyer_id = ?', (account_id,))
+            return 201, {'message': 'Order placed.', 'order_id': checkout_id,
+                          **self.buyer_data(db, account_id)}, []
+        raise RequestError(404, 'Buyer action not found.')
 
     @staticmethod
     def validate_product_images(images):
@@ -537,6 +708,14 @@ class AuthApp:
         if environ.get('HTTP_ORIGIN') not in (self.origin, request_origin):
             raise RequestError(403, 'Request origin is not allowed.')
         data = self.read_body(environ, False, max_length=12 * 1024 * 1024)
+        if path == '/api/seller/profile/payment-details':
+            details = data.get('payment_details', '')
+            if not isinstance(details, str) or len(details.strip()) > 1000:
+                raise RequestError(400, 'Enter payment details under 1000 characters.')
+            with db:
+                db.execute('UPDATE sellers SET payment_details = ? WHERE id = ?',
+                           (details.strip(), seller_id))
+            return 200, {'message': 'Payment details updated.'}, []
         if path == '/api/seller/products':
             title = data.get('title', '')
             description = data.get('description', '')
@@ -639,6 +818,22 @@ class AuthApp:
                         (seller_id, line['item_id'], checkout_id, -line['quantity'],
                          f"Paid {checkout['payment_method']} order #{checkout_id}", now_ms()))
             return 200, {'message': 'Payment confirmed and order marked paid. Stock was deducted.'}, []
+        status_match = re.fullmatch(r'/api/seller/orders/(\d+)/status', path)
+        if status_match:
+            checkout_id = int(status_match.group(1))
+            fulfillment_status = data.get('fulfillment_status')
+            if fulfillment_status not in ('packed', 'dispatched', 'delivered'):
+                raise RequestError(400, 'Choose packed, dispatched, or delivered.')
+            with db:
+                owns_order = db.execute('''SELECT 1 FROM checkout_items
+                    JOIN listed_items ON listed_items.id = checkout_items.item_id
+                    WHERE checkout_items.checkout_id = ? AND listed_items.seller_id = ?''',
+                    (checkout_id, seller_id)).fetchone()
+                if not owns_order:
+                    raise RequestError(404, 'Order not found.')
+                db.execute('UPDATE checkouts SET fulfillment_status = ? WHERE id = ?',
+                           (fulfillment_status, checkout_id))
+            return 200, {'message': 'Order status updated.'}, []
         raise RequestError(404, 'Seller action not found.')
 
     def dispatch(self, environ, db):
@@ -649,6 +844,8 @@ class AuthApp:
         if path == '/api/auth/me' and method in ('GET', 'HEAD'):
             user = self.user(db, environ)
             return (200, {'user': user}, []) if user else (401, {'error': 'Please log in.'}, [])
+        if path == '/api/catalog' or path.startswith('/api/buyer/'):
+            return self.dispatch_buyer_api(environ, db, path, method)
         if path.startswith('/api/seller/'):
             return self.dispatch_seller_api(environ, db, path, method)
         if path in AUTH_PATHS:
@@ -899,6 +1096,13 @@ class AuthApp:
                 with db:
                     self.create_seller_for_user(db, user)
             return 200, self.render('seller-dashboard.html', username=user['username']), []
+        if path == '/buyer-dashboard.html':
+            user = self.user(db, environ)
+            if not user:
+                return 302, '', [('Location', '/login.html')]
+            if user.get('persona') == 'artist':
+                return 302, '', [('Location', '/seller-dashboard.html')]
+            return 200, self.render('buyer-dashboard.html', username=user['username']), []
         if path in PUBLIC_FILES:
             relative_path = 'index.html' if path == '/' else path.lstrip('/')
             asset_path = ROOT / 'public' / relative_path

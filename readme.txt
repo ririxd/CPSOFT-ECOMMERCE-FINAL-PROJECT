@@ -73,6 +73,10 @@ Creator accounts can use seller-dashboard.html to add active products, including
 up to five JPG, PNG, WEBP, or GIF images per product. Images are validated on the
 server, limited to 1.5 MB each, and stored with the product record so they remain
 available across local SQLite and Supabase PostgreSQL deployments.
+Normal accounts can use buyer-dashboard.html to browse active products, add items
+to a persistent cart, place COD or online-payment orders, and follow packed,
+dispatched, and delivered fulfillment statuses. Sellers can store online payment
+instructions and update fulfillment status from their dashboard.
 Login and registration share persistent limits: 10 attempts per email and 50 per
 connection IP in 15 minutes. Forwarded IP headers are deliberately not trusted.
 Behind a reverse proxy, the connection IP limit is shared by that proxy's users;

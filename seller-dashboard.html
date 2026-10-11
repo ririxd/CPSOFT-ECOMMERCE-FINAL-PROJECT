@@ -82,7 +82,7 @@
                 <label>Low-stock alert at<input name="low_stock_threshold" type="number" min="0" step="1" value="3" required></label>
                 <label class="image-picker">Product images<input id="product-images" name="images" type="file" accept="image/jpeg,image/png,image/webp,image/gif" multiple><small>Upload up to 5 JPG, PNG, WEBP, or GIF images. Each image must be 1.5 MB or smaller.</small><span class="image-preview" id="image-preview"></span></label>
                 <button type="submit">Add product</button>
-            </form></section>
+            </form><hr><h2>Online payment details</h2><p class="muted">Share the account or wallet details buyers should use for online payments.</p><form id="payment-form"><textarea id="payment-details" maxlength="1000" placeholder="Bank or e-wallet name, account name, account number..."></textarea><button type="submit">Save payment details</button></form></section>
         </div>
     </main>
     <script>
@@ -105,7 +105,8 @@
             document.getElementById('sales-total').textContent = money(orders.filter(order => order.status === 'paid').reduce((sum, order) => sum + Number(order.total_cents), 0));
             document.getElementById('product-summary').textContent = products.length + ' listed';
             document.getElementById('products').innerHTML = products.length ? products.map(item => `<div class="product"><div class="product-info">${item.images && item.images[0] ? `<img class="product-image" src="${escapeHtml(item.images[0])}" alt="">` : '<div class="product-image" aria-hidden="true"></div>'}<div><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.description || 'No description')}</p><p>${money(item.price_cents)} · ${item.status}</p></div></div><div class="stock ${Number(item.inventory) <= Number(item.low_stock_threshold) ? 'low' : ''}"><strong>${item.inventory}</strong><span class="muted">in stock</span></div><button class="small-button" data-stock="${item.id}">Adjust stock</button></div>`).join('') : '<p class="muted">No products yet. Add your first piece.</p>';
-            document.getElementById('orders').innerHTML = orders.length ? orders.map(order => `<div class="order"><div class="order-head"><strong>Order #${order.id}</strong><span class="pill">${escapeHtml(order.status)}</span></div><p class="muted">${order.items.map(item => `${escapeHtml(item.title)} × ${item.quantity}`).join(', ')} · ${money(order.total_cents)} · ${date(order.created_at)}</p>${order.status === 'pending' ? `<button class="small-button" data-verify="${order.id}">Confirm payment and deduct stock</button>` : ''}</div>`).join('') : '<p class="muted">No orders yet.</p>';
+            document.getElementById('orders').innerHTML = orders.length ? orders.map(order => `<div class="order"><div class="order-head"><strong>Order #${order.id}</strong><span class="pill">${escapeHtml(order.fulfillment_status || 'packed')}</span></div><p class="muted">${order.items.map(item => `${escapeHtml(item.title)} × ${item.quantity}`).join(', ')} · ${money(order.total_cents)} · ${date(order.created_at)}</p>${order.status === 'pending' ? `<button class="small-button" data-verify="${order.id}">Confirm payment and deduct stock</button>` : ''}${order.status === 'paid' ? `<select class="small-button" data-status="${order.id}"><option value="">Update delivery status</option><option value="packed">Packed</option><option value="dispatched">Dispatched</option><option value="delivered">Delivered</option></select>` : ''}</div>`).join('') : '<p class="muted">No orders yet.</p>';
+            if (data.seller) document.getElementById('payment-details').value = data.seller.payment_details || '';
         }
         function escapeHtml(value) { return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char])); }
         async function load() { try { clearError(); render(await api('/api/seller/dashboard')); } catch (error) { showError(error.message); } }
@@ -151,6 +152,15 @@
             const button = event.target.closest('[data-verify]');
             if (!button || !confirm('Confirm payment and deduct the ordered stock?')) return;
             try { await api('/api/seller/orders/' + button.dataset.verify + '/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmed: true }) }); await load(); } catch (error) { showError(error.message); }
+        });
+        document.getElementById('orders').addEventListener('change', async event => {
+            const select = event.target.closest('[data-status]');
+            if (!select || !select.value) return;
+            try { await api('/api/seller/orders/' + select.dataset.status + '/status', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ fulfillment_status: select.value }) }); await load(); } catch (error) { showError(error.message); }
+        });
+        document.getElementById('payment-form').addEventListener('submit', async event => {
+            event.preventDefault();
+            try { await api('/api/seller/profile/payment-details', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ payment_details: document.getElementById('payment-details').value }) }); clearError(); } catch (error) { showError(error.message); }
         });
         load();
     </script>

@@ -184,6 +184,45 @@ class AuthTests(unittest.TestCase):
         dashboard = self.request('/api/seller/dashboard', cookie=cookie)
         self.assertEqual(json.loads(dashboard['body'])['products'][0]['images'], [image])
 
+    def test_buyer_catalog_cart_checkout_and_order_status(self):
+        image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
+        with sqlite3.connect(self.db_path) as db:
+            db.execute("INSERT INTO users (username, email, salt, password_hash, persona) VALUES (?, ?, ?, ?, 'collector')",
+                       ('buyer_user', 'buyer@example.test', '0' * 32, '0' * 128))
+            user_id = db.execute('SELECT id FROM users WHERE email = ?', ('buyer@example.test',)).fetchone()[0]
+            account_id = db.execute("INSERT INTO registered_accounts (account_type) VALUES ('user')").lastrowid
+            db.execute('''INSERT INTO account_credentials
+                (account_id, username, email, password_salt, password_hash)
+                VALUES (?, ?, ?, ?, ?)''',
+                       (account_id, 'buyer_user', 'buyer@example.test', '0' * 32, '0' * 128))
+            seller_id = db.execute("INSERT INTO registered_accounts (account_type) VALUES ('seller')").lastrowid
+            db.execute("INSERT INTO sellers (id, display_name, payment_details) VALUES (?, ?, ?)",
+                       (seller_id, 'Test Seller', 'Bank: 123456'))
+            item_id = db.execute('''INSERT INTO listed_items
+                (seller_id, title, description, price_cents, inventory, images, status)
+                VALUES (?, ?, ?, ?, ?, ?, 'active')''',
+                (seller_id, 'Test print', 'A test print', 2500, 3, json.dumps([image]))).lastrowid
+        db.close()
+        with self.app.connect() as db:
+            with db:
+                set_cookie = self.app.issue_session(db, {}, user_id)
+        db.close()
+        cookie = set_cookie[1].split(';')[0]
+        self.assertEqual(self.request('/api/catalog')['status'], 200)
+        cart = self.request('/api/buyer/cart', {'item_id': item_id, 'quantity': 2}, cookie=cookie)
+        self.assertEqual(cart['status'], 200)
+        checkout = self.request('/api/buyer/checkout',
+                                {'payment_method': 'online', 'payment_reference': 'TX-123'},
+                                cookie=cookie)
+        self.assertEqual(checkout['status'], 201)
+        order_id = json.loads(checkout['body'])['order_id']
+        with sqlite3.connect(self.db_path) as db:
+            db.execute("UPDATE checkouts SET fulfillment_status = 'delivered' WHERE id = ?", (order_id,))
+        db.close()
+        orders = self.request('/api/buyer/cart', cookie=cookie)
+        self.assertEqual(orders['status'], 200)
+        self.assertEqual(json.loads(orders['body'])['orders'][0]['fulfillment_status'], 'delivered')
+
 
 if __name__ == '__main__':
     unittest.main()
