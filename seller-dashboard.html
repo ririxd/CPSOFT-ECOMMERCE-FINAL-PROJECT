@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Seller dashboard — Art House</title>
+    <style>
+        :root { --ink: #202525; --muted: #6d7470; --paper: #f7f4ee; --card: #fffdf9; --line: #e3ded4; --accent: #bd6846; --green: #31554b; }
+        * { box-sizing: border-box; }
+        body { margin: 0; color: var(--ink); background: var(--paper); font: 15px/1.5 Arial, sans-serif; }
+        header { display: flex; align-items: center; justify-content: space-between; padding: 22px 6vw; border-bottom: 1px solid var(--line); background: var(--card); }
+        .brand { color: var(--ink); font: 700 25px Georgia, serif; text-decoration: none; letter-spacing: -1px; }
+        .brand span { font-weight: 400; }
+        .header-actions { display: flex; gap: 20px; align-items: center; }
+        a { color: var(--green); }
+        .button, button { border: 0; border-radius: 3px; cursor: pointer; font: inherit; }
+        .button { background: var(--ink); color: white; padding: 10px 16px; text-decoration: none; }
+        main { width: min(1180px, 88vw); margin: 48px auto 80px; }
+        .eyebrow { color: var(--accent); font-size: 11px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; }
+        h1, h2, h3 { font-family: Georgia, serif; font-weight: 400; }
+        h1 { font-size: clamp(34px, 5vw, 58px); line-height: 1; margin: 8px 0 14px; }
+        h2 { font-size: 27px; margin: 0 0 20px; }
+        .intro { display: flex; justify-content: space-between; gap: 24px; align-items: end; margin-bottom: 34px; }
+        .intro p { color: var(--muted); margin: 0; }
+        .stats { display: grid; grid-template-columns: repeat(4, 1fr); gap: 14px; margin-bottom: 42px; }
+        .stat, section { background: var(--card); border: 1px solid var(--line); padding: 22px; }
+        .stat strong { display: block; font: 32px Georgia, serif; margin-top: 5px; }
+        .dashboard-grid { display: grid; grid-template-columns: 1.35fr .65fr; gap: 20px; }
+        section { margin-bottom: 20px; }
+        .section-heading { display: flex; justify-content: space-between; align-items: center; gap: 12px; }
+        .product { border-top: 1px solid var(--line); display: grid; grid-template-columns: 1fr auto auto; gap: 16px; align-items: center; padding: 16px 0; }
+        .product h3 { font-size: 19px; margin: 0 0 3px; }
+        .product p, .muted { color: var(--muted); margin: 0; font-size: 13px; }
+        .stock { text-align: right; min-width: 90px; }
+        .stock strong { display: block; font-size: 20px; }
+        .low { color: var(--accent); }
+        .small-button { background: #ece8df; color: var(--ink); padding: 7px 10px; }
+        form { display: grid; gap: 12px; }
+        label { color: var(--muted); font-size: 13px; }
+        input, textarea { width: 100%; border: 1px solid var(--line); border-radius: 2px; padding: 10px; background: white; font: inherit; }
+        textarea { min-height: 75px; resize: vertical; }
+        form button { background: var(--green); color: white; padding: 11px; }
+        .order { border-top: 1px solid var(--line); padding: 15px 0; }
+        .order-head { display: flex; justify-content: space-between; gap: 12px; }
+        .pill { border-radius: 20px; background: #e6eee9; color: var(--green); padding: 3px 9px; font-size: 12px; }
+        .notice { display: none; margin-bottom: 20px; padding: 12px 15px; background: #f5e3dc; color: #8a422b; }
+        .notice.show { display: block; }
+        @media (max-width: 800px) { .stats, .dashboard-grid { grid-template-columns: 1fr 1fr; } .intro { display: block; } .intro .button { display: inline-block; margin-top: 18px; } }
+        @media (max-width: 560px) { main { width: 92vw; margin-top: 30px; } header { padding: 18px 4vw; } .stats { grid-template-columns: 1fr 1fr; } .product { grid-template-columns: 1fr auto; } .product .stock { text-align: left; } }
+    </style>
+</head>
+<body>
+    <header>
+        <a class="brand" href="/">art<span>house</span></a>
+        <div class="header-actions"><span>Hi, {{username}}</span><a href="/account.html">Account</a><form method="post" action="/api/auth/logout"><button class="button" type="submit">Log out</button></form></div>
+    </header>
+    <main>
+        <div id="notice" class="notice" role="alert"></div>
+        <div class="intro"><div><div class="eyebrow">Creator studio</div><h1>Your work, in one place.</h1><p>Keep your collection current and stay on top of every order.</p></div><a class="button" href="#add-product">Add a product</a></div>
+        <div class="stats">
+            <div class="stat"><div class="eyebrow">Products</div><strong id="product-count">—</strong></div>
+            <div class="stat"><div class="eyebrow">Units in stock</div><strong id="stock-count">—</strong></div>
+            <div class="stat"><div class="eyebrow">Pending orders</div><strong id="pending-count">—</strong></div>
+            <div class="stat"><div class="eyebrow">Paid sales</div><strong id="sales-total">—</strong></div>
+        </div>
+        <div class="dashboard-grid">
+            <div>
+                <section><div class="section-heading"><h2>Your products</h2><span class="muted" id="product-summary"></span></div><div id="products"><p class="muted">Loading products…</p></div></section>
+                <section><h2>Orders</h2><div id="orders"><p class="muted">Loading orders…</p></div></section>
+            </div>
+            <section id="add-product"><h2>Add a product</h2><form id="product-form">
+                <label>Title<input name="title" maxlength="120" required></label>
+                <label>Description<textarea name="description" maxlength="2000"></textarea></label>
+                <label>Price (USD)<input name="price" type="number" min="0.01" step="0.01" required></label>
+                <label>Opening stock<input name="inventory" type="number" min="0" step="1" value="0" required></label>
+                <label>Low-stock alert at<input name="low_stock_threshold" type="number" min="0" step="1" value="3" required></label>
+                <button type="submit">Add product</button>
+            </form></section>
+        </div>
+    </main>
+    <script>
+        const notice = document.getElementById('notice');
+        const money = cents => '$' + (Number(cents || 0) / 100).toFixed(2);
+        const date = value => value ? new Date(Number(value)).toLocaleDateString() : '—';
+        function showError(message) { notice.textContent = message; notice.classList.add('show'); }
+        function clearError() { notice.textContent = ''; notice.classList.remove('show'); }
+        async function api(path, options = {}) {
+            const response = await fetch(path, { credentials: 'same-origin', ...options });
+            const data = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(data.error || 'Unable to complete that request.');
+            return data;
+        }
+        function render(data) {
+            const products = data.products || [], orders = data.orders || [];
+            document.getElementById('product-count').textContent = products.length;
+            document.getElementById('stock-count').textContent = products.reduce((sum, item) => sum + Number(item.inventory), 0);
+            document.getElementById('pending-count').textContent = orders.filter(order => order.status === 'pending').length;
+            document.getElementById('sales-total').textContent = money(orders.filter(order => order.status === 'paid').reduce((sum, order) => sum + Number(order.total_cents), 0));
+            document.getElementById('product-summary').textContent = products.length + ' listed';
+            document.getElementById('products').innerHTML = products.length ? products.map(item => `<div class="product"><div><h3>${escapeHtml(item.title)}</h3><p>${escapeHtml(item.description || 'No description')}</p><p>${money(item.price_cents)} · ${item.status}</p></div><div class="stock ${Number(item.inventory) <= Number(item.low_stock_threshold) ? 'low' : ''}"><strong>${item.inventory}</strong><span class="muted">in stock</span></div><button class="small-button" data-stock="${item.id}">Adjust stock</button></div>`).join('') : '<p class="muted">No products yet. Add your first piece.</p>';
+            document.getElementById('orders').innerHTML = orders.length ? orders.map(order => `<div class="order"><div class="order-head"><strong>Order #${order.id}</strong><span class="pill">${escapeHtml(order.status)}</span></div><p class="muted">${order.items.map(item => `${escapeHtml(item.title)} × ${item.quantity}`).join(', ')} · ${money(order.total_cents)} · ${date(order.created_at)}</p>${order.status === 'pending' ? `<button class="small-button" data-verify="${order.id}">Confirm payment and deduct stock</button>` : ''}</div>`).join('') : '<p class="muted">No orders yet.</p>';
+        }
+        function escapeHtml(value) { return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char])); }
+        async function load() { try { clearError(); render(await api('/api/seller/dashboard')); } catch (error) { showError(error.message); } }
+        document.getElementById('product-form').addEventListener('submit', async event => {
+            event.preventDefault();
+            try { await api('/api/seller/products', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(Object.fromEntries(new FormData(event.target))) }); event.target.reset(); await load(); } catch (error) { showError(error.message); }
+        });
+        document.getElementById('products').addEventListener('click', async event => {
+            const button = event.target.closest('[data-stock]');
+            if (!button) return;
+            const quantity = prompt('Adjust stock by a whole number (use a negative number to remove stock):');
+            if (quantity === null) return;
+            try { await api('/api/seller/products/' + button.dataset.stock + '/stock', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ quantity_delta: quantity, note: 'Dashboard adjustment' }) }); await load(); } catch (error) { showError(error.message); }
+        });
+        document.getElementById('orders').addEventListener('click', async event => {
+            const button = event.target.closest('[data-verify]');
+            if (!button || !confirm('Confirm payment and deduct the ordered stock?')) return;
+            try { await api('/api/seller/orders/' + button.dataset.verify + '/verify', { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ confirmed: true }) }); await load(); } catch (error) { showError(error.message); }
+        });
+        load();
+    </script>
+</body>
+</html>

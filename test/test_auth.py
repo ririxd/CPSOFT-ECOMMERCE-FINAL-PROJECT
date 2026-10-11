@@ -157,6 +157,25 @@ class AuthTests(unittest.TestCase):
         self.assertNotIn('<img src=x', page)
         self.assertIn('&lt;img src=x', page)
 
+    def test_artist_dashboard_page_and_data(self):
+        with sqlite3.connect(self.db_path) as db:
+            db.execute("INSERT INTO users (username, email, salt, password_hash, persona) VALUES (?, ?, ?, ?, 'artist')",
+                       ('dashboard_artist', 'dashboard@example.test', '0' * 32, '0' * 128))
+            user_id = db.execute('SELECT id FROM users WHERE email = ?', ('dashboard@example.test',)).fetchone()[0]
+        db.close()
+        with self.app.connect() as db:
+            with db:
+                set_cookie = self.app.issue_session(db, {}, user_id)
+        db.close()
+        cookie = set_cookie[1].split(';')[0]
+        page = self.request('/seller-dashboard.html', cookie=cookie)
+        self.assertEqual(page['status'], 200)
+        self.assertIn('Your work, in one place.', page['body'])
+        self.assertNotIn('{{username}}', page['body'])
+        dashboard = self.request('/api/seller/dashboard', cookie=cookie)
+        self.assertEqual(dashboard['status'], 200)
+        self.assertEqual(json.loads(dashboard['body'])['products'], [])
+
 
 if __name__ == '__main__':
     unittest.main()

@@ -453,9 +453,11 @@ class AuthApp:
             WHERE seller_id = ? ORDER BY created_at DESC, id DESC''', (seller_id,)).fetchall()]
         movements = [dict(row) for row in db.execute('''SELECT inventory_movements.id,
             inventory_movements.item_id, listed_items.title AS item_title, checkout_id,
-            quantity_delta, reason, note, created_at FROM inventory_movements
+            quantity_delta, reason, note, inventory_movements.created_at AS created_at
+            FROM inventory_movements
             JOIN listed_items ON listed_items.id = inventory_movements.item_id
-            WHERE inventory_movements.seller_id = ? ORDER BY created_at DESC, id DESC LIMIT 250''',
+            WHERE inventory_movements.seller_id = ? ORDER BY inventory_movements.created_at DESC,
+            inventory_movements.id DESC LIMIT 250''',
             (seller_id,)).fetchall()]
         order_rows = db.execute('''SELECT checkouts.id, checkouts.status, checkouts.total_cents,
             checkouts.payment_method, checkouts.payment_reference, checkouts.created_at,
