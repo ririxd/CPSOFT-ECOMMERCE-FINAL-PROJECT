@@ -67,7 +67,7 @@ PUBLIC_FILES = {
     '/': 'text/html', '/index.html': 'text/html', '/styles.css': 'text/css',
     '/css/vendor.css': 'text/css',
     **{'/js/' + name + '.js': 'text/javascript'
-       for name in ('script', 'plugins', 'jquery-1.11.0.min')},
+       for name in ('script', 'plugins', 'jquery-1.11.0.min', 'buyer-assistant')},
 }
 AUTH_PATHS = {'/api/auth/register', '/api/auth/login', '/api/auth/logout',
               '/api/auth/delete',
