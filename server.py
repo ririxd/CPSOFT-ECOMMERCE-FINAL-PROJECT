@@ -810,6 +810,23 @@ class AuthApp:
         raise RequestError(404, 'Buyer action not found.')
 
     def dispatch_community_api(self, environ, db, path, method):
+        if path == '/api/suggested-profiles' and method in ('GET', 'HEAD'):
+            user = self.user(db, environ)
+            if not user:
+                raise RequestError(401, 'Please log in to view suggested accounts.')
+            account_id = self.account_id_for_user(db, user)
+            rows = db.execute('''SELECT registered_accounts.id, users.username,
+                COALESCE(users.nickname, '') AS nickname, users.persona,
+                COALESCE(sellers.display_name, '') AS display_name,
+                COALESCE(sellers.bio, '') AS bio, COALESCE(users.profile_picture, '') AS profile_picture
+                FROM registered_accounts
+                JOIN account_credentials ON account_credentials.account_id = registered_accounts.id
+                JOIN users ON users.email = account_credentials.email
+                LEFT JOIN sellers ON sellers.id = registered_accounts.id
+                WHERE registered_accounts.id <> ?
+                ORDER BY CASE WHEN sellers.id IS NOT NULL THEN 0 ELSE 1 END,
+                         registered_accounts.created_at DESC LIMIT 6''', (account_id or 0,)).fetchall()
+            return 200, {'profiles': [dict(row) for row in rows]}, []
         if path == '/api/search' and method in ('GET', 'HEAD'):
             query = parse_qs(environ.get('QUERY_STRING', '')).get('q', [''])[0].strip()
             if not query or len(query) > 80:
@@ -1145,7 +1162,7 @@ class AuthApp:
             return (200, {'user': user}, []) if user else (401, {'error': 'Please log in.'}, [])
         if path.startswith('/api/admin/'):
             return self.dispatch_admin_api(environ, db, path, method)
-        if path in ('/api/search',) or path.startswith('/api/profiles/') or path in ('/api/support', '/api/chat'):
+        if path in ('/api/search', '/api/suggested-profiles') or path.startswith('/api/profiles/') or path in ('/api/support', '/api/chat'):
             return self.dispatch_community_api(environ, db, path, method)
         if path == '/api/catalog' or path.startswith('/api/buyer/'):
             return self.dispatch_buyer_api(environ, db, path, method)
