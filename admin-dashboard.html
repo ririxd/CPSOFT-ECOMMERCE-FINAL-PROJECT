@@ -1,0 +1,36 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Admin — Art House</title>
+  <link rel="stylesheet" href="/styles.css?v=admin-20261014">
+  <style>
+    body{background:#f7f4ee;color:#202525;font:15px/1.5 Arial,sans-serif;margin:0}
+    header{background:#fffdf9;border-bottom:1px solid #e3ded4;padding:22px 6vw;display:flex;justify-content:space-between}
+    main{width:min(1200px,90vw);margin:42px auto}.grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+    section{background:#fffdf9;border:1px solid #e3ded4;padding:22px;margin-bottom:20px}
+    h1,h2{font-family:Georgia,serif;font-weight:400}h1{font-size:44px;margin:8px 0 25px}
+    h2{margin-top:0}.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%;font-size:13px}
+    th,td{text-align:left;border-top:1px solid #e3ded4;padding:10px 8px;vertical-align:top}
+    button{border:0;background:#31554b;color:#fff;padding:7px 10px;cursor:pointer}
+    button.unban{background:#bd6846}.muted{color:#6d7470}.notice{min-height:22px;color:#31554b}
+    @media(max-width:800px){.grid{grid-template-columns:1fr}h1{font-size:36px}}
+  </style>
+</head>
+<body><header><strong>art house · administration</strong><form method="post" action="/api/auth/logout"><button type="submit">Log out</button></form></header>
+<main><div class="eyebrow">Private operations</div><h1>Keep the marketplace healthy.</h1><p id="notice" class="notice"></p>
+<div class="grid"><section><h2>Accounts</h2><div id="users" class="table-wrap"><p class="muted">Loading…</p></div></section>
+<section><h2>Orders and activity</h2><div id="orders" class="table-wrap"><p class="muted">Loading…</p></div></section></div>
+<section><h2>Customer support</h2><div id="tickets" class="table-wrap"><p class="muted">Loading…</p></div></section></main>
+<script>
+const notice=document.getElementById('notice');
+const esc=value=>String(value??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+async function api(path, options){const response=await fetch(path,options);const data=await response.json();if(!response.ok)throw Error(data.error||'Request failed');return data}
+function table(rows, columns){return '<table><thead><tr>'+columns.map(c=>'<th>'+c[0]+'</th>').join('')+'</tr></thead><tbody>'+rows.map(row=>'<tr>'+columns.map(c=>'<td>'+c[1](row)+'</td>').join('')+'</tr>').join('')+'</tbody></table>'}
+async function load(){try{const data=await api('/api/admin/dashboard');
+document.getElementById('users').innerHTML=table(data.users,[['Account',r=>esc(r.username)+'<br>'+esc(r.email)],['Role',r=>esc(r.persona||r.account_type)],['Status',r=>r.banned?'Banned':'Active'],['Action',r=>'<button class="'+(r.banned?'unban':'')+'" data-id="'+r.id+'" data-banned="'+(!r.banned)+'">'+(r.banned?'Unban':'Ban')+'</button>']]);
+document.getElementById('orders').innerHTML=table(data.orders,[['Order',r=>'#'+r.id],['Buyer',r=>esc(r.buyer_email)],['Status',r=>esc(r.status)],['Total',r=>'₱'+(r.total_cents/100).toFixed(2)]]);
+document.getElementById('tickets').innerHTML=data.tickets.length?table(data.tickets,[['From',r=>esc(r.account_id)],['Subject',r=>esc(r.subject)],['Message',r=>esc(r.message)],['Status',r=>esc(r.status)] ]):'<p class="muted">No support requests yet.</p>';
+document.querySelectorAll('[data-id]').forEach(button=>button.onclick=async()=>{try{await api('/api/admin/accounts/'+button.dataset.id+'/ban',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({banned:button.dataset.banned==='true',reason:'Reviewed by Art House administration'})});load()}catch(error){notice.textContent=error.message}})}catch(error){notice.textContent=error.message}}
+load();
+</script></body></html>

@@ -74,11 +74,11 @@
 <body>
     <header>
         <a class="brand" href="/">art<span>house</span></a>
-        <div class="header-actions"><img class="profile-thumb" src="{{profile_picture}}" alt=""><span>Hi, {{display_name}}</span><a href="/account.html">Account</a><form method="post" action="/api/auth/logout"><button class="button" type="submit">Log out</button></form></div>
+        <div class="header-actions"><img class="profile-thumb" src="{{profile_picture}}" alt=""><span>Hi, {{display_name}}</span><button id="support-button" type="button">Support</button><a href="/account.html">Account</a><form method="post" action="/api/auth/logout"><button class="button" type="submit">Log out</button></form></div>
     </header>
     <main>
         <div id="notice" class="notice" role="alert"></div>
-        <div class="intro"><div><div class="eyebrow">Creator studio</div><h1>Your work, in one place.</h1><p>Keep your collection current and stay on top of every order.</p></div><a class="button" href="#add-product">Add a product</a></div>
+        <div class="intro"><div><div class="eyebrow">Creator studio</div><h1>Your work, in one place.</h1><p>Keep your collection current and stay on top of every order.</p><form id="market-search" style="display:flex;gap:8px;margin-top:18px"><input name="q" placeholder="Search products and profiles" aria-label="Search products and profiles"><button type="submit">Search</button></form><p id="search-results" class="muted"></p></div><a class="button" href="#add-product">Add a product</a></div>
         <div class="stats">
             <div class="stat"><div class="eyebrow">Products</div><strong id="product-count">—</strong></div>
             <div class="stat"><div class="eyebrow">Units in stock</div><strong id="stock-count">—</strong></div>
@@ -145,6 +145,8 @@
         }
         function escapeHtml(value) { return String(value).replace(/[&<>"']/g, char => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#039;' }[char])); }
         async function load() { try { clearError(); render(await api('/api/seller/dashboard')); } catch (error) { showError(error.message); } }
+        document.getElementById('market-search').addEventListener('submit', async event => { event.preventDefault(); const q = event.target.q.value.trim(); if (!q) return; try { const result = await api('/api/search?q=' + encodeURIComponent(q)); document.getElementById('search-results').textContent = `${result.products.length + result.profiles.length} result(s) found.`; } catch (error) { showError(error.message); } });
+        document.getElementById('support-button').addEventListener('click', async () => { const subject = prompt('What do you need help with?'); if (!subject) return; const message = prompt('Tell customer support what happened.'); if (!message) return; try { await api('/api/support', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({subject, message})}); showError('Support request sent.', true); } catch (error) { showError(error.message); } });
         const imageInput = document.getElementById('product-images');
         imageInput.addEventListener('change', () => {
             const files = [...imageInput.files];

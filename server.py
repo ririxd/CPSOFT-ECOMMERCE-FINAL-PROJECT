@@ -75,6 +75,8 @@ AUTH_PATHS = {'/api/auth/register', '/api/auth/login', '/api/auth/logout',
               '/api/auth/register/resend', '/api/auth/register/verify',
               '/api/auth/profile/persona',
               '/api/auth/password-reset/request', '/api/auth/password-reset/confirm'}
+ADMIN_EMAIL = 'Art-House@gmail.com'
+ADMIN_PASSWORD = 'ArtHouse.Admin'
 
 
 class Database:
@@ -159,6 +161,8 @@ def send_otp_email(receiver_email, otp, intent):
             if response.status < 200 or response.status >= 300:
                 raise RuntimeError(f'Brevo API returned HTTP {response.status}.')
         return True
+
+
     if not smtp_configured:
         raise RuntimeError('Brevo transactional email is not configured.')
     message['Subject'] = subject
@@ -171,6 +175,45 @@ def send_otp_email(receiver_email, otp, intent):
         smtp.login(SMTP_LOGIN, SMTP_PASSWORD)
         smtp.send_message(message)
     return True
+
+
+def send_receipt_email(receiver_email, order_id, total_cents, items):
+    text = (
+        'Thank you for shopping with Art House.\n\n'
+        f'Order #{order_id}\n' +
+        '\n'.join(f"- {item['title']} x{item['quantity']} — ₱{item['unit_price_cents'] * item['quantity'] / 100:.2f}"
+                  for item in items) +
+        f'\n\nTotal: ₱{total_cents / 100:.2f}\n'
+    )
+    if BREVO_API_KEY:
+        payload = json.dumps({
+            'sender': {'name': SMTP_SENDER_NAME, 'email': SMTP_SENDER_EMAIL},
+            'to': [{'email': receiver_email}],
+            'subject': f'Art House e-receipt #{order_id}',
+            'textContent': text,
+        }).encode('utf-8')
+        response = Request(
+            'https://api.brevo.com/v3/smtp/email', data=payload,
+            headers={'accept': 'application/json', 'api-key': BREVO_API_KEY,
+                     'content-type': 'application/json'}, method='POST')
+        with urlopen(response, timeout=12) as result:
+            if result.status < 200 or result.status >= 300:
+                raise RuntimeError(f'Brevo API returned HTTP {result.status}.')
+        return
+    message = MIMEText(
+        text
+    )
+    message['Subject'] = f'Art House e-receipt #{order_id}'
+    message['From'] = f'{SMTP_SENDER_NAME} <{SMTP_SENDER_EMAIL}>'
+    message['To'] = receiver_email
+    if not (SMTP_LOGIN and SMTP_PASSWORD and SMTP_SENDER_EMAIL):
+        raise RuntimeError('Brevo transactional email is not configured.')
+    with smtplib.SMTP(SMTP_SERVER, SMTP_PORT, timeout=12) as smtp:
+        smtp.ehlo()
+        smtp.starttls(context=ssl.create_default_context())
+        smtp.ehlo()
+        smtp.login(SMTP_LOGIN, SMTP_PASSWORD)
+        smtp.send_message(message)
 
 
 def now_ms():
@@ -336,6 +379,29 @@ class AuthApp:
                     expires INTEGER NOT NULL, attempts INTEGER NOT NULL DEFAULT 0,
                     created_at INTEGER NOT NULL
                 );
+                CREATE TABLE IF NOT EXISTS admin_sessions (
+                    token_hash TEXT PRIMARY KEY, expires INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS account_flags (
+                    account_id INTEGER PRIMARY KEY REFERENCES registered_accounts(id) ON DELETE CASCADE,
+                    banned INTEGER NOT NULL DEFAULT 0, reason TEXT NOT NULL DEFAULT '',
+                    updated_at INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS support_tickets (
+                    id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL REFERENCES registered_accounts(id) ON DELETE CASCADE,
+                    subject TEXT NOT NULL, message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open',
+                    created_at INTEGER NOT NULL
+                );
+                CREATE TABLE IF NOT EXISTS conversations (
+                    id INTEGER PRIMARY KEY, buyer_id INTEGER NOT NULL REFERENCES registered_accounts(id) ON DELETE CASCADE,
+                    seller_id INTEGER NOT NULL REFERENCES registered_accounts(id) ON DELETE CASCADE,
+                    created_at INTEGER NOT NULL, UNIQUE(buyer_id, seller_id)
+                );
+                CREATE TABLE IF NOT EXISTS messages (
+                    id INTEGER PRIMARY KEY, conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                    sender_id INTEGER NOT NULL REFERENCES registered_accounts(id) ON DELETE CASCADE,
+                    body TEXT NOT NULL, created_at INTEGER NOT NULL
+                );
             ''')
                 user_columns = {row['name'] for row in db.execute('PRAGMA table_info(users)').fetchall()}
                 if 'persona' not in user_columns:
@@ -367,6 +433,24 @@ class AuthApp:
                 seller_columns = {row['name'] for row in db.execute('PRAGMA table_info(sellers)').fetchall()}
                 if 'payment_details' not in seller_columns:
                     db.execute("ALTER TABLE sellers ADD COLUMN payment_details TEXT NOT NULL DEFAULT ''")
+                db.execute('''CREATE TABLE IF NOT EXISTS admin_sessions (
+                    token_hash TEXT PRIMARY KEY, expires INTEGER NOT NULL)''')
+                db.execute('''CREATE TABLE IF NOT EXISTS account_flags (
+                    account_id INTEGER PRIMARY KEY REFERENCES registered_accounts(id) ON DELETE CASCADE,
+                    banned INTEGER NOT NULL DEFAULT 0, reason TEXT NOT NULL DEFAULT '',
+                    updated_at INTEGER NOT NULL)''')
+                db.execute('''CREATE TABLE IF NOT EXISTS support_tickets (
+                    id INTEGER PRIMARY KEY, account_id INTEGER NOT NULL REFERENCES registered_accounts(id) ON DELETE CASCADE,
+                    subject TEXT NOT NULL, message TEXT NOT NULL, status TEXT NOT NULL DEFAULT 'open',
+                    created_at INTEGER NOT NULL)''')
+                db.execute('''CREATE TABLE IF NOT EXISTS conversations (
+                    id INTEGER PRIMARY KEY, buyer_id INTEGER NOT NULL REFERENCES registered_accounts(id) ON DELETE CASCADE,
+                    seller_id INTEGER NOT NULL REFERENCES registered_accounts(id) ON DELETE CASCADE,
+                    created_at INTEGER NOT NULL, UNIQUE(buyer_id, seller_id))''')
+                db.execute('''CREATE TABLE IF NOT EXISTS messages (
+                    id INTEGER PRIMARY KEY, conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
+                    sender_id INTEGER NOT NULL REFERENCES registered_accounts(id) ON DELETE CASCADE,
+                    body TEXT NOT NULL, created_at INTEGER NOT NULL)''')
                 db.execute('''CREATE TABLE IF NOT EXISTS cart_items (
                     buyer_id INTEGER NOT NULL REFERENCES registered_accounts(id) ON DELETE CASCADE,
                     item_id INTEGER NOT NULL REFERENCES listed_items(id) ON DELETE CASCADE,
@@ -416,6 +500,18 @@ class AuthApp:
         user.setdefault('profile_details', '')
         user.setdefault('profile_picture', '')
         return user
+
+    def is_admin(self, db, environ):
+        return bool(db.execute('SELECT 1 FROM admin_sessions WHERE token_hash = ? AND expires > ?',
+                               (digest(self.token(environ)), now_ms())).fetchone())
+
+    def issue_admin_session(self, db, environ):
+        token = secrets.token_hex(32)
+        db.execute('DELETE FROM admin_sessions WHERE expires <= ? OR token_hash = ?',
+                   (now_ms(), digest(self.token(environ))))
+        db.execute('INSERT INTO admin_sessions VALUES (?, ?)',
+                   (digest(token), now_ms() + SESSION_SECONDS * 1000))
+        return ('Set-Cookie', self.cookie(token, SESSION_SECONDS))
 
     def issue_session(self, db, environ, user_id):
         token = secrets.token_hex(32)
@@ -620,7 +716,14 @@ class AuthApp:
 
     def dispatch_buyer_api(self, environ, db, path, method):
         if path == '/api/catalog' and method in ('GET', 'HEAD'):
-            return 200, {'products': self.buyer_catalog(db)}, []
+            query = parse_qs(environ.get('QUERY_STRING', '')).get('q', [''])[0].strip()
+            products = self.buyer_catalog(db)
+            if query:
+                needle = query.lower()
+                products = [item for item in products if needle in
+                            (item['title'] + ' ' + item.get('description', '') + ' ' +
+                             item.get('seller', '')).lower()]
+            return 200, {'products': products}, []
         user = self.user(db, environ)
         if not user:
             raise RequestError(401, 'Please log in to use your cart and orders.')
@@ -692,9 +795,162 @@ class AuthApp:
                         VALUES (?, ?, ?, ?)''',
                                (checkout_id, line['item_id'], line['quantity'], line['price_cents']))
                 db.execute('DELETE FROM cart_items WHERE buyer_id = ?', (account_id,))
+                buyer_email = db.execute('SELECT email FROM account_credentials WHERE account_id = ?',
+                                         (account_id,)).fetchone()['email']
+                receipt_items = [dict(row) for row in db.execute('''SELECT listed_items.title,
+                    checkout_items.quantity, checkout_items.unit_price_cents
+                    FROM checkout_items JOIN listed_items ON listed_items.id = checkout_items.item_id
+                    WHERE checkout_items.checkout_id = ?''', (checkout_id,)).fetchall()]
+            try:
+                send_receipt_email(buyer_email, checkout_id, total, receipt_items)
+            except (RuntimeError, smtplib.SMTPException, OSError):
+                logging.exception('Art House e-receipt could not be sent for order %s', checkout_id)
             return 201, {'message': 'Order placed.', 'order_id': checkout_id,
                           **self.buyer_data(db, account_id)}, []
         raise RequestError(404, 'Buyer action not found.')
+
+    def dispatch_community_api(self, environ, db, path, method):
+        if path == '/api/search' and method in ('GET', 'HEAD'):
+            query = parse_qs(environ.get('QUERY_STRING', '')).get('q', [''])[0].strip()
+            if not query or len(query) > 80:
+                return 200, {'products': [], 'profiles': []}, []
+            like = '%' + query + '%'
+            products = db.execute('''SELECT listed_items.id, listed_items.title,
+                listed_items.description, listed_items.price_cents, listed_items.images,
+                sellers.id AS seller_id, sellers.display_name
+                FROM listed_items JOIN sellers ON sellers.id = listed_items.seller_id
+                WHERE listed_items.status = 'active' AND
+                (listed_items.title LIKE ? OR listed_items.description LIKE ? OR sellers.display_name LIKE ?)
+                ORDER BY listed_items.created_at DESC LIMIT 50''', (like, like, like)).fetchall()
+            profiles = db.execute('''SELECT registered_accounts.id, users.username,
+                COALESCE(users.nickname, '') AS nickname, users.persona,
+                COALESCE(sellers.display_name, '') AS display_name
+                FROM registered_accounts JOIN account_credentials ON account_credentials.account_id = registered_accounts.id
+                JOIN users ON users.email = account_credentials.email
+                LEFT JOIN sellers ON sellers.id = registered_accounts.id
+                WHERE users.username LIKE ? OR users.nickname LIKE ? OR sellers.display_name LIKE ?
+                LIMIT 50''', (like, like, like)).fetchall()
+            return 200, {'products': [dict(row) for row in products],
+                         'profiles': [dict(row) for row in profiles]}, []
+        if path.startswith('/api/profiles/') and method in ('GET', 'HEAD'):
+            try:
+                account_id = int(path.rsplit('/', 1)[1])
+            except ValueError:
+                raise RequestError(400, 'Choose a valid profile.')
+            row = db.execute('''SELECT registered_accounts.id, users.username, users.email,
+                users.persona, COALESCE(users.nickname, '') AS nickname,
+                COALESCE(users.profile_details, '') AS profile_details,
+                COALESCE(users.profile_picture, '') AS profile_picture,
+                COALESCE(sellers.display_name, '') AS display_name,
+                COALESCE(sellers.bio, '') AS bio
+                FROM registered_accounts JOIN account_credentials ON account_credentials.account_id = registered_accounts.id
+                JOIN users ON users.email = account_credentials.email
+                LEFT JOIN sellers ON sellers.id = registered_accounts.id
+                WHERE registered_accounts.id = ?''', (account_id,)).fetchone()
+            if not row:
+                raise RequestError(404, 'Profile not found.')
+            products = db.execute('''SELECT id, title, description, price_cents, images
+                FROM listed_items WHERE seller_id = ? AND status = 'active'
+                ORDER BY created_at DESC''', (account_id,)).fetchall()
+            result = dict(row)
+            result['products'] = [dict(item) for item in products]
+            return 200, {'profile': result}, []
+        user = self.user(db, environ)
+        if not user:
+            raise RequestError(401, 'Please log in to continue.')
+        account_id = self.account_id_for_user(db, user)
+        if not account_id:
+            raise RequestError(403, 'Your account profile is not available yet.')
+        if path == '/api/support' and method == 'POST':
+            data = self.read_body(environ, False)
+            subject, message = data.get('subject', ''), data.get('message', '')
+            if not isinstance(subject, str) or not isinstance(message, str) or not subject.strip() or not message.strip():
+                raise RequestError(400, 'Enter a subject and message.')
+            if len(subject) > 120 or len(message) > 2000:
+                raise RequestError(400, 'Your support message is too long.')
+            with db:
+                ticket = db.execute('''INSERT INTO support_tickets
+                    (account_id, subject, message, created_at) VALUES (?, ?, ?, ?) RETURNING id''',
+                    (account_id, subject.strip(), message.strip(), now_ms())).fetchone()['id']
+            return 201, {'message': 'Support request sent.', 'ticket_id': ticket}, []
+        if path == '/api/chat' and method == 'GET':
+            target = parse_qs(environ.get('QUERY_STRING', '')).get('account_id', [''])[0]
+            try:
+                target_id = int(target)
+            except ValueError:
+                raise RequestError(400, 'Choose a conversation partner.')
+            buyer_id, seller_id = (account_id, target_id) if user.get('persona') != 'artist' else (target_id, account_id)
+            conversation = db.execute('SELECT id FROM conversations WHERE buyer_id = ? AND seller_id = ?',
+                                      (buyer_id, seller_id)).fetchone()
+            if not conversation:
+                return 200, {'messages': []}, []
+            rows = db.execute('''SELECT messages.id, messages.sender_id, messages.body, messages.created_at,
+                COALESCE(users.nickname, users.username) AS sender_name
+                FROM messages JOIN registered_accounts ON registered_accounts.id = messages.sender_id
+                JOIN account_credentials ON account_credentials.account_id = registered_accounts.id
+                JOIN users ON users.email = account_credentials.email
+                WHERE conversation_id = ? ORDER BY messages.created_at ASC LIMIT 200''',
+                              (conversation['id'],)).fetchall()
+            return 200, {'messages': [dict(row) for row in rows]}, []
+        if path == '/api/chat' and method == 'POST':
+            data = self.read_body(environ, False)
+            try:
+                target_id = int(data.get('account_id'))
+            except (TypeError, ValueError):
+                raise RequestError(400, 'Choose a conversation partner.')
+            body = data.get('message', '')
+            if not isinstance(body, str) or not body.strip() or len(body) > 2000:
+                raise RequestError(400, 'Enter a message under 2000 characters.')
+            buyer_id, seller_id = (account_id, target_id) if user.get('persona') != 'artist' else (target_id, account_id)
+            with db:
+                conversation = db.execute('''INSERT INTO conversations
+                    (buyer_id, seller_id, created_at) VALUES (?, ?, ?)
+                    ON CONFLICT(buyer_id, seller_id) DO UPDATE SET buyer_id = excluded.buyer_id
+                    RETURNING id''', (buyer_id, seller_id, now_ms())).fetchone()
+                db.execute('INSERT INTO messages (conversation_id, sender_id, body, created_at) VALUES (?, ?, ?, ?)',
+                           (conversation['id'], account_id, body.strip(), now_ms()))
+            return 201, {'message': 'Message sent.'}, []
+        raise RequestError(404, 'Community action not found.')
+
+    def dispatch_admin_api(self, environ, db, path, method):
+        if not self.is_admin(db, environ):
+            raise RequestError(403, 'Admin access is required.')
+        if path == '/api/admin/dashboard' and method in ('GET', 'HEAD'):
+            users = db.execute('''SELECT registered_accounts.id, account_credentials.username,
+                account_credentials.email, registered_accounts.account_type,
+                COALESCE(users.persona, '') AS persona, COALESCE(account_flags.banned, 0) AS banned,
+                registered_accounts.created_at
+                FROM registered_accounts JOIN account_credentials ON account_credentials.account_id = registered_accounts.id
+                JOIN users ON users.email = account_credentials.email LEFT JOIN account_flags
+                ON account_flags.account_id = registered_accounts.id ORDER BY registered_accounts.created_at DESC''').fetchall()
+            orders = db.execute('''SELECT checkouts.id, checkouts.status, checkouts.total_cents,
+                checkouts.created_at, account_credentials.email AS buyer_email
+                FROM checkouts JOIN registered_accounts ON registered_accounts.id = checkouts.buyer_id
+                JOIN account_credentials ON account_credentials.account_id = registered_accounts.id
+                ORDER BY checkouts.created_at DESC LIMIT 100''').fetchall()
+            tickets = db.execute('SELECT * FROM support_tickets ORDER BY created_at DESC LIMIT 100').fetchall()
+            return 200, {'users': [dict(row) for row in users], 'orders': [dict(row) for row in orders],
+                         'tickets': [dict(row) for row in tickets]}, []
+        match = re.fullmatch(r'/api/admin/accounts/(\d+)/ban', path)
+        if match and method == 'POST':
+            data = self.read_body(environ, False)
+            try:
+                account_id = int(match.group(1))
+            except ValueError:
+                raise RequestError(400, 'Invalid account.')
+            banned = data.get('banned')
+            if not isinstance(banned, bool):
+                raise RequestError(400, 'Banned must be true or false.')
+            reason = data.get('reason', '')
+            if not isinstance(reason, str) or len(reason) > 500:
+                raise RequestError(400, 'Enter a valid ban reason.')
+            with db:
+                db.execute('''INSERT INTO account_flags (account_id, banned, reason, updated_at)
+                    VALUES (?, ?, ?, ?) ON CONFLICT(account_id) DO UPDATE SET banned = excluded.banned,
+                    reason = excluded.reason, updated_at = excluded.updated_at''',
+                           (account_id, int(banned), reason.strip(), now_ms()))
+            return 200, {'message': 'Account status updated.'}, []
+        raise RequestError(404, 'Admin action not found.')
 
     @staticmethod
     def validate_product_images(images):
@@ -887,6 +1143,10 @@ class AuthApp:
         if path == '/api/auth/me' and method in ('GET', 'HEAD'):
             user = self.user(db, environ)
             return (200, {'user': user}, []) if user else (401, {'error': 'Please log in.'}, [])
+        if path.startswith('/api/admin/'):
+            return self.dispatch_admin_api(environ, db, path, method)
+        if path in ('/api/search',) or path.startswith('/api/profiles/') or path in ('/api/support', '/api/chat'):
+            return self.dispatch_community_api(environ, db, path, method)
         if path == '/api/catalog' or path.startswith('/api/buyer/'):
             return self.dispatch_buyer_api(environ, db, path, method)
         if path.startswith('/api/seller/'):
@@ -1177,11 +1437,24 @@ class AuthApp:
                 raise RequestError(400, 'Enter a valid email and password.')
             if self.limited(db, 'email:' + digest(email), 10):
                 raise RequestError(429, 'Too many attempts. Please try again in 15 minutes.')
+            if email == ADMIN_EMAIL.lower() and password == ADMIN_PASSWORD:
+                with db:
+                    headers = [self.issue_admin_session(db, environ)]
+                if form:
+                    return 303, '', headers + [('Location', '/admin-dashboard.html')]
+                return 200, {'admin': True, 'redirect': '/admin-dashboard.html'}, headers
             row = db.execute('SELECT * FROM users WHERE email = ?', (email,)).fetchone()
             candidate = password_hash(password, row['salt'] if row else self.dummy_salt)
             matches = hmac.compare_digest(candidate, row['password_hash'] if row else '0' * 128)
             if not row or not matches:
                 raise RequestError(401, 'Email or password is incorrect.')
+            account = db.execute('''SELECT registered_accounts.id, COALESCE(account_flags.banned, 0) AS banned
+                FROM registered_accounts JOIN account_credentials
+                ON account_credentials.account_id = registered_accounts.id
+                LEFT JOIN account_flags ON account_flags.account_id = registered_accounts.id
+                WHERE account_credentials.email = ?''', (email,)).fetchone()
+            if account and account['banned']:
+                raise RequestError(403, 'This account has been banned. Contact customer support.')
             user = {key: row[key] for key in ('id', 'username', 'email', 'persona')}
             with db:
                 headers = [self.issue_session(db, environ, user['id'])]
@@ -1206,6 +1479,10 @@ class AuthApp:
                    'persona': user.get('persona') or '',
                    'dashboard_url': '/seller-dashboard.html' if user.get('persona') == 'artist'
                    else '/buyer-dashboard.html'}), []
+        if path == '/admin-dashboard.html':
+            if not self.is_admin(db, environ):
+                return 302, '', [('Location', '/login.html')]
+            return 200, self.render('admin-dashboard.html'), []
         if path == '/seller-dashboard.html':
             user = self.user(db, environ)
             if not user:
