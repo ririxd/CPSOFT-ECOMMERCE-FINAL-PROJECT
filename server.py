@@ -993,13 +993,50 @@ class AuthApp:
                 JOIN users ON users.email = account_credentials.email LEFT JOIN account_flags
                 ON account_flags.account_id = registered_accounts.id ORDER BY registered_accounts.created_at DESC''').fetchall()
             orders = db.execute('''SELECT checkouts.id, checkouts.status, checkouts.total_cents,
-                checkouts.created_at, account_credentials.email AS buyer_email
+                checkouts.created_at, checkouts.fulfillment_status, checkouts.payment_method,
+                checkouts.payment_reference, account_credentials.username AS buyer_username,
+                account_credentials.email AS buyer_email
                 FROM checkouts JOIN registered_accounts ON registered_accounts.id = checkouts.buyer_id
                 JOIN account_credentials ON account_credentials.account_id = registered_accounts.id
-                ORDER BY checkouts.created_at DESC LIMIT 100''').fetchall()
+                ORDER BY checkouts.created_at DESC, checkouts.id DESC LIMIT 100''').fetchall()
             tickets = db.execute('SELECT * FROM support_tickets ORDER BY created_at DESC LIMIT 100').fetchall()
+            totals = db.execute('''SELECT COALESCE(SUM(CASE WHEN status = 'paid'
+                THEN total_cents ELSE 0 END), 0) AS revenue_cents,
+                COUNT(CASE WHEN status = 'pending' THEN 1 END) AS pending_orders
+                FROM checkouts''').fetchone()
+            day_ms = 86400000
+            today = now_ms() // day_ms * day_ms
+            daily_sales = [{'date': today - offset * day_ms, 'total_cents': 0}
+                           for offset in range(6, -1, -1)]
+            previous_week_cents = 0
+            for order in db.execute('''SELECT total_cents, COALESCE(paid_at, created_at) AS sale_at
+                FROM checkouts WHERE status = 'paid' AND COALESCE(paid_at, created_at) >= ?
+                AND COALESCE(paid_at, created_at) < ?''', (today - 13 * day_ms, today + day_ms)).fetchall():
+                day_index = (order['sale_at'] - (today - 6 * day_ms)) // day_ms
+                if day_index < 0:
+                    previous_week_cents += order['total_cents']
+                else:
+                    daily_sales[day_index]['total_cents'] += order['total_cents']
+            moderation = db.execute('''SELECT account_credentials.username,
+                account_flags.banned, account_flags.reason, account_flags.updated_at
+                FROM account_flags JOIN account_credentials
+                ON account_credentials.account_id = account_flags.account_id
+                ORDER BY account_flags.updated_at DESC LIMIT 20''').fetchall()
+            products = db.execute('''SELECT listed_items.id, listed_items.title, listed_items.status,
+                listed_items.inventory, listed_items.price_cents, sellers.display_name
+                FROM listed_items JOIN sellers ON sellers.id = listed_items.seller_id
+                ORDER BY listed_items.created_at DESC, listed_items.id DESC LIMIT 100''').fetchall()
             return 200, {'users': [dict(row) for row in users], 'orders': [dict(row) for row in orders],
-                         'tickets': [dict(row) for row in tickets]}, []
+                         'tickets': [dict(row) for row in tickets],
+                         'products': [dict(row) for row in products],
+                         'moderation': [dict(row) for row in moderation],
+                         'summary': {'revenue_cents': int(totals['revenue_cents']),
+                             'pending_orders': int(totals['pending_orders']),
+                             'artist_signups_today': sum(row['persona'] == 'artist' and
+                                 today <= row['created_at'] < today + day_ms for row in users),
+                             'flagged_accounts': sum(bool(row['banned']) for row in users),
+                             'previous_week_cents': previous_week_cents,
+                             'daily_sales': daily_sales}}, []
         ticket_match = re.fullmatch(r'/api/admin/support/(\d+)/close', path)
         if ticket_match and method == 'POST':
             ticket_id = int(ticket_match.group(1))

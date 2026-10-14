@@ -7,6 +7,8 @@ import sqlite3
 import tempfile
 import unittest
 from urllib.parse import urlencode
+from unittest.mock import patch
+import time
 from wsgiref.util import setup_testing_defaults
 
 from server import AuthApp, SESSION_SECONDS
@@ -183,6 +185,73 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(created['status'], 201)
         dashboard = self.request('/api/seller/dashboard', cookie=cookie)
         self.assertEqual(json.loads(dashboard['body'])['products'][0]['images'], [image])
+
+    def test_admin_dashboard_summary_and_management(self):
+        self.assertEqual(self.request('/api/admin/dashboard')['status'], 403)
+        self.assertEqual(self.request('/admin-dashboard.html')['status'], 302)
+        with self.app.connect() as db:
+            with db:
+                cookie = self.app.issue_admin_session(db, {})[1].split(';')[0]
+        empty = self.request('/api/admin/dashboard', cookie=cookie)
+        self.assertEqual(empty['status'], 200)
+        self.assertEqual(json.loads(empty['body'])['summary']['revenue_cents'], 0)
+        self.assertEqual(json.loads(empty['body'])['summary']['pending_orders'], 0)
+        day_ms = 86400000
+        today = int(time.time() * 1000) // day_ms * day_ms
+        with self.app.connect() as db:
+            with db:
+                for name, persona in [('admin_buyer', 'collector'), ('admin_artist', 'artist')]:
+                    db.execute("""INSERT INTO users (username, email, salt, password_hash, persona)
+                        VALUES (?, ?, ?, ?, ?)""", (name, name + '@example.test', '0' * 32, '0' * 128, persona))
+                    user = dict(db.execute('SELECT * FROM users WHERE username = ?', (name,)).fetchone())
+                    self.app.create_seller_for_user(db, user)
+                    db.execute('UPDATE registered_accounts SET created_at = ? WHERE id = ?',
+                               (today, self.app.account_id_for_user(db, user)))
+                buyer_id = db.execute("SELECT account_id FROM account_credentials WHERE username = 'admin_buyer'").fetchone()['account_id']
+                seller_id = db.execute("SELECT account_id FROM account_credentials WHERE username = 'admin_artist'").fetchone()['account_id']
+                normal_cookie = self.app.issue_session(db, {}, user['id'])[1].split(';')[0]
+                db.execute("""INSERT INTO listed_items (seller_id, title, price_cents, inventory, status)
+                    VALUES (?, 'Admin catalog draft', 5000, 3, 'draft')""", (seller_id,))
+                for cents, timestamp in [(10000, today), (5000, today - day_ms),
+                                         (7000, today - 7 * day_ms), (4000, today - 30 * day_ms)]:
+                    db.execute("""INSERT INTO checkouts (buyer_id, status, total_cents, created_at, paid_at)
+                        VALUES (?, 'paid', ?, ?, ?)""", (buyer_id, cents, today - 40 * day_ms, timestamp))
+                for _ in range(101):
+                    db.execute("INSERT INTO checkouts (buyer_id, status, total_cents, created_at) VALUES (?, 'pending', 2000, ?)", (buyer_id, today))
+                db.execute("INSERT INTO checkouts (buyer_id, status, total_cents, created_at) VALUES (?, 'refunded', 9900, ?)", (buyer_id, today))
+                ticket_id = db.execute("""INSERT INTO support_tickets (account_id, subject, message, created_at)
+                    VALUES (?, 'Admin support check', 'Synthetic support request', ?) RETURNING id""", (buyer_id, today)).fetchone()['id']
+        self.assertEqual(self.request('/api/admin/dashboard', cookie=normal_cookie)['status'], 403)
+        banned = self.request('/api/admin/accounts/' + str(buyer_id) + '/ban',
+                              {'banned': True, 'reason': 'Test moderation'}, cookie=cookie)
+        self.assertEqual(banned['status'], 200)
+        with patch('server.now_ms', return_value=today + 43200000):
+            response = self.request('/api/admin/dashboard', cookie=cookie)
+        self.assertEqual(response['status'], 200)
+        self.assertEqual(response['headers']['Cache-Control'], 'no-store')
+        data = json.loads(response['body'])
+        self.assertEqual(data['summary']['revenue_cents'], 26000)
+        self.assertEqual(data['summary']['pending_orders'], 101)
+        self.assertEqual(data['summary']['artist_signups_today'], 1)
+        self.assertEqual(data['summary']['flagged_accounts'], 1)
+        self.assertEqual(data['summary']['previous_week_cents'], 7000)
+        self.assertEqual(len(data['summary']['daily_sales']), 7)
+        self.assertEqual([day['total_cents'] for day in data['summary']['daily_sales']], [0, 0, 0, 0, 0, 5000, 10000])
+        self.assertEqual(len(data['orders']), 100)
+        self.assertEqual(data['orders'][0]['buyer_username'], 'admin_buyer')
+        self.assertIn('fulfillment_status', data['orders'][0])
+        self.assertEqual(data['products'][0]['status'], 'draft')
+        self.assertEqual(data['moderation'][0]['reason'], 'Test moderation')
+        closed = self.request('/api/admin/support/' + str(ticket_id) + '/close', cookie=cookie, method='POST')
+        self.assertEqual(closed['status'], 200)
+        self.assertEqual(json.loads(self.request('/api/admin/dashboard', cookie=cookie)['body'])['tickets'][0]['status'], 'closed')
+        unbanned = self.request('/api/admin/accounts/' + str(buyer_id) + '/ban', {'banned': False}, cookie=cookie)
+        self.assertEqual(unbanned['status'], 200)
+        self.assertEqual(json.loads(self.request('/api/admin/dashboard', cookie=cookie)['body'])['summary']['flagged_accounts'], 0)
+        page = self.request('/admin-dashboard.html', cookie=cookie)
+        self.assertEqual(page['status'], 200)
+        self.assertIn('id="sales-chart"', page['body'])
+        self.assertIn('id="admin-search"', page['body'])
 
     def test_recent_conversations_are_private_ordered_and_persistent(self):
         def account(name, persona):
