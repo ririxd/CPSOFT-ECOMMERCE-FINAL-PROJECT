@@ -918,7 +918,7 @@ class AuthApp:
         if path == '/api/admin/dashboard' and method in ('GET', 'HEAD'):
             users = db.execute('''SELECT registered_accounts.id, account_credentials.username,
                 account_credentials.email, registered_accounts.account_type,
-                COALESCE(users.persona, '') AS persona, COALESCE(account_flags.banned, 0) AS banned,
+                COALESCE(users.persona, '') AS persona, COALESCE(account_flags.banned, FALSE) AS banned,
                 registered_accounts.created_at
                 FROM registered_accounts JOIN account_credentials ON account_credentials.account_id = registered_accounts.id
                 JOIN users ON users.email = account_credentials.email LEFT JOIN account_flags
@@ -948,7 +948,7 @@ class AuthApp:
                 db.execute('''INSERT INTO account_flags (account_id, banned, reason, updated_at)
                     VALUES (?, ?, ?, ?) ON CONFLICT(account_id) DO UPDATE SET banned = excluded.banned,
                     reason = excluded.reason, updated_at = excluded.updated_at''',
-                           (account_id, int(banned), reason.strip(), now_ms()))
+                           (account_id, banned, reason.strip(), now_ms()))
             return 200, {'message': 'Account status updated.'}, []
         raise RequestError(404, 'Admin action not found.')
 
@@ -1448,7 +1448,7 @@ class AuthApp:
             matches = hmac.compare_digest(candidate, row['password_hash'] if row else '0' * 128)
             if not row or not matches:
                 raise RequestError(401, 'Email or password is incorrect.')
-            account = db.execute('''SELECT registered_accounts.id, COALESCE(account_flags.banned, 0) AS banned
+            account = db.execute('''SELECT registered_accounts.id, COALESCE(account_flags.banned, FALSE) AS banned
                 FROM registered_accounts JOIN account_credentials
                 ON account_credentials.account_id = registered_accounts.id
                 LEFT JOIN account_flags ON account_flags.account_id = registered_accounts.id
