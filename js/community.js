@@ -106,7 +106,8 @@
 
   const toggle = document.getElementById('chat-toggle');
   const embedded = document.body.dataset.chatLayout === 'embedded';
-  const desktop = window.matchMedia(embedded ? '(min-width:1000px)' : '(min-width:1280px)');
+  const tabbed = document.body.dataset.chatLayout === 'tabbed';
+  const desktop = window.matchMedia(tabbed ? '(min-width:0px)' : embedded ? '(min-width:1000px)' : '(min-width:1280px)');
   const scrim = document.getElementById('community-scrim');
   const input = document.getElementById('chat-input');
   const compose = document.getElementById('chat-compose');
@@ -119,6 +120,12 @@
   function setOpen(open) {
     panel.hidden = !open;
     document.body.classList.toggle('chat-open', open);
+    if (tabbed) {
+      scrim.hidden = true;
+      panel.setAttribute('role', 'region');
+      document.dispatchEvent(new CustomEvent('community:chat-visibility', {detail:{open}}));
+      return;
+    }
     toggle.setAttribute('aria-expanded', String(open)); toggle.setAttribute('aria-label', open ? 'Close messages' : 'Open messages');
     scrim.hidden = !open || desktop.matches;
     panel.setAttribute('role', desktop.matches ? 'complementary' : 'dialog');
@@ -127,14 +134,17 @@
     document.querySelectorAll(background).forEach(node => { node.inert = !desktop.matches && open; });
     if (open && !desktop.matches) document.getElementById('chat-close').focus();
   }
-  toggle.addEventListener('click', () => setOpen(panel.hidden));
+  toggle.addEventListener('click', () => setOpen(tabbed || panel.hidden));
   document.querySelectorAll('[data-open-inbox]').forEach(button => button.addEventListener('click', () => setOpen(true)));
-  document.getElementById('chat-close').addEventListener('click', () => { setOpen(false); toggle.focus(); });
-  scrim.addEventListener('click', () => { setOpen(false); toggle.focus(); });
+  function restoreFocus() {
+    (tabbed ? document.querySelector('[data-seller-tab][aria-selected="true"]') : toggle)?.focus();
+  }
+  document.getElementById('chat-close').addEventListener('click', () => { setOpen(false); restoreFocus(); });
+  scrim.addEventListener('click', () => { setOpen(false); restoreFocus(); });
   desktop.addEventListener('change', () => setOpen(desktop.matches));
   document.addEventListener('keydown', event => {
     if (panel.hidden || socialDialog.open) return;
-    if (event.key === 'Escape' && (!desktop.matches || panel.contains(document.activeElement))) { setOpen(false); toggle.focus(); }
+    if (event.key === 'Escape' && (!desktop.matches || panel.contains(document.activeElement))) { setOpen(false); restoreFocus(); }
     if (event.key === 'Tab' && !desktop.matches) {
       const controls = [...panel.querySelectorAll('button,input,textarea,a[href]')].filter(node => !node.disabled && node.getClientRects().length);
       const first = controls[0], last = controls.at(-1);
@@ -143,7 +153,7 @@
       else if (!event.shiftKey && document.activeElement === last) { event.preventDefault(); first.focus(); }
     }
   });
-  setOpen(desktop.matches);
+  setOpen(tabbed ? !panel.closest('[hidden]') : desktop.matches);
   function markPartner() {
     recent.querySelectorAll('[data-chat-account]').forEach(button => button.setAttribute('aria-pressed', String(Number(button.dataset.chatAccount) === Number(partner?.id))));
   }

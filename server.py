@@ -65,9 +65,9 @@ BREVO_PROVIDER = os.environ.get('BREVO_PROVIDER', 'auto').strip().lower()
 SESSION_SECONDS = 7 * 24 * 60 * 60
 PUBLIC_FILES = {
     '/': 'text/html', '/index.html': 'text/html', '/styles.css': 'text/css',
-    '/css/vendor.css': 'text/css', '/css/community.css': 'text/css',
+    '/css/vendor.css': 'text/css', '/css/community.css': 'text/css', '/css/seller-dashboard.css': 'text/css',
     **{'/js/' + name + '.js': 'text/javascript'
-       for name in ('script', 'plugins', 'jquery-1.11.0.min', 'buyer-assistant', 'community')},
+       for name in ('script', 'plugins', 'jquery-1.11.0.min', 'buyer-assistant', 'community', 'seller-dashboard', 'seller-reports')},
 }
 AUTH_PATHS = {'/api/auth/register', '/api/auth/login', '/api/auth/logout',
               '/api/auth/delete',
