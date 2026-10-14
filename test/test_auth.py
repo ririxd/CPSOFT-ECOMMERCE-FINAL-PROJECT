@@ -173,7 +173,7 @@ class AuthTests(unittest.TestCase):
         cookie = set_cookie[1].split(';')[0]
         page = self.request('/seller-dashboard.html', cookie=cookie)
         self.assertEqual(page['status'], 200)
-        self.assertIn('Your work, in one place.', page['body'])
+        self.assertIn('THRIVE IN THE MARKETPLACE.', page['body'])
         self.assertNotIn('{{username}}', page['body'])
         dashboard = self.request('/api/seller/dashboard', cookie=cookie)
         self.assertEqual(dashboard['status'], 200)

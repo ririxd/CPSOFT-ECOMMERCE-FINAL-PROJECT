@@ -105,7 +105,8 @@
   if (!panel) return;
 
   const toggle = document.getElementById('chat-toggle');
-  const desktop = window.matchMedia('(min-width:1280px)');
+  const embedded = document.body.dataset.chatLayout === 'embedded';
+  const desktop = window.matchMedia(embedded ? '(min-width:1000px)' : '(min-width:1280px)');
   const scrim = document.getElementById('community-scrim');
   const input = document.getElementById('chat-input');
   const compose = document.getElementById('chat-compose');
@@ -122,10 +123,12 @@
     scrim.hidden = !open || desktop.matches;
     panel.setAttribute('role', desktop.matches ? 'complementary' : 'dialog');
     if (!desktop.matches && open) panel.setAttribute('aria-modal', 'true'); else panel.removeAttribute('aria-modal');
-    document.querySelectorAll('body>header,body>main,#assistant-launcher,#buyer-assistant').forEach(node => { node.inert = !desktop.matches && open; });
+    const background = embedded ? 'body>header,main>.intro,main>.stats,#notice,.hub-workspace,.hub-sidebar' : 'body>header,body>main,#assistant-launcher,#buyer-assistant';
+    document.querySelectorAll(background).forEach(node => { node.inert = !desktop.matches && open; });
     if (open && !desktop.matches) document.getElementById('chat-close').focus();
   }
   toggle.addEventListener('click', () => setOpen(panel.hidden));
+  document.querySelectorAll('[data-open-inbox]').forEach(button => button.addEventListener('click', () => setOpen(true)));
   document.getElementById('chat-close').addEventListener('click', () => { setOpen(false); toggle.focus(); });
   scrim.addEventListener('click', () => { setOpen(false); toggle.focus(); });
   desktop.addEventListener('change', () => setOpen(desktop.matches));
