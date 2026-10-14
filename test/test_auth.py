@@ -6,7 +6,7 @@ from pathlib import Path
 import sqlite3
 import tempfile
 import unittest
-from urllib.parse import urlencode
+from urllib.parse import urlencode, urlsplit
 from unittest.mock import patch
 import time
 from wsgiref.util import setup_testing_defaults
@@ -26,7 +26,8 @@ class AuthTests(unittest.TestCase):
         environ = {}
         setup_testing_defaults(environ)
         body = raw if raw is not None else (urlencode(data).encode() if form and data is not None else json.dumps(data).encode())
-        environ.update(PATH_INFO=path, REQUEST_METHOD=method or ('POST' if data is not None or raw is not None else 'GET'),
+        parsed_path = urlsplit(path)
+        environ.update(PATH_INFO=parsed_path.path, QUERY_STRING=parsed_path.query, REQUEST_METHOD=method or ('POST' if data is not None or raw is not None else 'GET'),
                        HTTP_ORIGIN=origin, HTTP_COOKIE=cookie, REMOTE_ADDR='127.0.0.1',
                        CONTENT_TYPE=content_type or ('application/x-www-form-urlencoded' if form else 'application/json'),
                        CONTENT_LENGTH=str(len(body)))
@@ -185,6 +186,133 @@ class AuthTests(unittest.TestCase):
         self.assertEqual(created['status'], 201)
         dashboard = self.request('/api/seller/dashboard', cookie=cookie)
         self.assertEqual(json.loads(dashboard['body'])['products'][0]['images'], [image])
+
+    def community_account(self, name, persona):
+        with self.app.connect() as db:
+            with db:
+                user_id = db.execute("""INSERT INTO users (username, email, salt, password_hash, persona)
+                    VALUES (?, ?, ?, ?, ?) RETURNING id""", (name, name + '@example.test', '0' * 32, '0' * 128, persona)).fetchone()['id']
+                user = dict(db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone())
+                if persona == 'artist':
+                    self.app.create_seller_for_user(db, user)
+                else:
+                    account_id = db.execute("INSERT INTO registered_accounts (account_type) VALUES ('user') RETURNING id").fetchone()['id']
+                    db.execute("""INSERT INTO account_credentials (account_id, username, email, password_salt, password_hash)
+                        VALUES (?, ?, ?, ?, ?)""", (account_id, name, user['email'], user['salt'], user['password_hash']))
+                account_id = self.app.account_id_for_user(db, user)
+                cookie = self.app.issue_session(db, {}, user_id)[1].split(';')[0]
+        return account_id, cookie
+
+    def test_following_is_authenticated_idempotent_and_persistent(self):
+        seller, seller_cookie = self.community_account('follow_seller', 'artist')
+        buyer, buyer_cookie = self.community_account('follow_buyer', 'collector')
+        other, other_cookie = self.community_account('follow_other', 'artist')
+        path = '/api/profiles/' + str(seller) + '/follow'
+        self.assertEqual(self.request('/api/social/me')['status'], 401)
+        self.assertEqual(self.request(path, {'following': True})['status'], 401)
+        self.assertEqual(self.request(path, {'following': True}, cookie=buyer_cookie, origin='https://other.test')['status'], 403)
+        self.assertEqual(self.request(path, {'following': 'true'}, cookie=buyer_cookie)['status'], 400)
+        self.assertEqual(self.request(path, {'following': True}, cookie=seller_cookie)['status'], 400)
+        self.assertEqual(self.request('/api/profiles/99999/follow', {'following': True}, cookie=buyer_cookie)['status'], 404)
+        for _ in range(2):
+            self.assertEqual(self.request(path, {'following': True}, cookie=buyer_cookie)['status'], 200)
+        self.request(path, {'following': True}, cookie=other_cookie)
+        self.request('/api/profiles/' + str(buyer) + '/follow', {'following': True}, cookie=seller_cookie)
+        self.app = AuthApp(self.db_path)
+        mine = json.loads(self.request('/api/social/me', cookie=buyer_cookie)['body'])
+        self.assertEqual(mine['following_ids'], [seller])
+        self.assertEqual(mine['following_count'], 1)
+        self.assertEqual(mine['followers_count'], 1)
+        profile = json.loads(self.request('/api/profiles/' + str(seller), cookie=buyer_cookie)['body'])['profile']
+        self.assertEqual(profile['followers_count'], 2)
+        self.assertTrue(profile['is_following'])
+        self.assertFalse(profile['is_self'])
+        own_profile = json.loads(self.request('/api/profiles/' + str(seller), cookie=seller_cookie)['body'])['profile']
+        self.assertTrue(own_profile['is_self'])
+        followers = json.loads(self.request('/api/profiles/' + str(seller) + '/followers')['body'])['profiles']
+        self.assertEqual({row['id'] for row in followers}, {buyer, other})
+        self.assertTrue(all('email' not in row for row in followers))
+        following = json.loads(self.request('/api/profiles/' + str(buyer) + '/following')['body'])['profiles']
+        self.assertEqual([row['id'] for row in following], [seller])
+        for _ in range(2):
+            self.assertEqual(self.request(path, {'following': False}, cookie=buyer_cookie)['status'], 200)
+        mine = json.loads(self.request('/api/social/me', cookie=buyer_cookie)['body'])
+        self.assertEqual(mine['following_count'], 0)
+        self.assertEqual(json.loads(self.request('/api/profiles/' + str(seller))['body'])['profile']['followers_count'], 1)
+
+    def test_follow_list_pagination_upgrade_and_cascade(self):
+        target, cookie = self.community_account('pagination_artist', 'artist')
+        # Upgrading an existing database installs the new table without losing accounts.
+        with self.app.connect() as db:
+            db.execute('DROP TABLE follows')
+        self.app = AuthApp(self.db_path)
+        for index in range(51):
+            follower, follower_cookie = self.community_account('pagination_user_' + str(index), 'collector')
+            self.assertEqual(self.request('/api/profiles/' + str(target) + '/follow', {'following': True}, cookie=follower_cookie)['status'], 200)
+        first = json.loads(self.request('/api/profiles/' + str(target) + '/followers')['body'])
+        second = json.loads(self.request('/api/profiles/' + str(target) + '/followers?offset=50')['body'])
+        self.assertEqual(len(first['profiles']), 50)
+        self.assertTrue(first['has_more'])
+        self.assertEqual(len(second['profiles']), 1)
+        self.assertFalse(second['has_more'])
+        self.assertFalse({row['id'] for row in first['profiles']} & {row['id'] for row in second['profiles']})
+        self.assertEqual(self.request('/api/profiles/' + str(target) + '/followers?offset=-1')['status'], 400)
+        with self.app.connect() as db:
+            # The PostgreSQL migration uses compatible standard SQL; execute it twice
+            # against SQLite too to verify idempotent schema statements.
+            db.executescript((Path(__file__).resolve().parents[1] / 'migrations/009_social_connections.sql').read_text())
+            db.executescript((Path(__file__).resolve().parents[1] / 'migrations/009_social_connections.sql').read_text())
+            with db:
+                db.execute('DELETE FROM registered_accounts WHERE id = ?', (target,))
+            self.assertEqual(db.execute('SELECT COUNT(*) AS total FROM follows').fetchone()['total'], 0)
+
+    def test_chat_all_account_types_preserves_legacy_threads_and_privacy(self):
+        artist_a = self.community_account('chat_artist_a', 'artist')
+        artist_b = self.community_account('chat_artist_b', 'artist')
+        buyer_a = self.community_account('chat_buyer_a', 'collector')
+        buyer_b = self.community_account('chat_buyer_b', 'collector')
+        outsider = self.community_account('chat_observer', 'collector')
+        # Legacy cross-role rows were ordered by role, rather than by account ID.
+        with self.app.connect() as db:
+            with db:
+                legacy = db.execute('INSERT INTO conversations (buyer_id,seller_id,created_at) VALUES (?,?,1) RETURNING id', (buyer_a[0], artist_a[0])).fetchone()['id']
+                db.execute("INSERT INTO messages (conversation_id,sender_id,body,created_at) VALUES (?,?,'Legacy message',1)", (legacy, artist_a[0]))
+        for first, second in [(artist_a, artist_b), (buyer_a, buyer_b), (artist_a, buyer_a)]:
+            for sender, receiver, text in [(first, second, 'Hello'), (second, first, 'Reply')]:
+                sent = self.request('/api/chat', {'account_id':receiver[0], 'message':text}, cookie=sender[1])
+                self.assertEqual(sent['status'], 201)
+            for owner, target in [(first,second),(second,first)]:
+                read = self.request('/api/chat?account_id=' + str(target[0]), cookie=owner[1])
+                self.assertEqual(read['status'], 200)
+                messages = json.loads(read['body'])['messages']
+                self.assertEqual([row['body'] for row in messages][-2:], ['Hello', 'Reply'])
+                self.assertEqual([row['sender_id'] for row in messages][-2:], [first[0],second[0]])
+                if first == artist_a and second == buyer_a:
+                    self.assertEqual(messages[0]['body'], 'Legacy message')
+            with self.app.connect() as db:
+                count = db.execute('SELECT COUNT(*) AS total FROM conversations WHERE (buyer_id=? AND seller_id=?) OR (buyer_id=? AND seller_id=?)', (first[0],second[0],second[0],first[0])).fetchone()['total']
+                self.assertEqual(count, 1)
+        private = self.request('/api/chat?account_id=' + str(artist_a[0]), cookie=outsider[1])
+        self.assertEqual(json.loads(private['body'])['messages'], [])
+        self.assertEqual(json.loads(self.request('/api/chat/conversations', cookie=outsider[1])['body'])['conversations'], [])
+        self.assertEqual(self.request('/api/chat', {'account_id':artist_a[0], 'message':'No'}, cookie=artist_a[1])['status'], 400)
+        self.assertEqual(self.request('/api/chat', {'account_id':artist_b[0], 'message':'No'}, cookie=artist_a[1], origin='https://other.test')['status'], 403)
+        self.assertEqual(self.request('/api/chat', {'account_id':artist_a[0], 'message':'No'})['status'], 401)
+        # Changing persona cannot hide an existing conversation.
+        with self.app.connect() as db:
+            with db:
+                db.execute("UPDATE users SET persona='collector' WHERE username='chat_artist_b'")
+        self.assertEqual(len(json.loads(self.request('/api/chat?account_id=' + str(artist_b[0]), cookie=artist_a[1])['body'])['messages']), 2)
+        # Long conversations return the most recent 200 messages, chronologically.
+        with self.app.connect() as db:
+            conversation = db.execute('SELECT id FROM conversations WHERE buyer_id=? AND seller_id=?', (artist_a[0],artist_b[0])).fetchone()['id']
+            with db:
+                for index in range(205):
+                    db.execute('INSERT INTO messages (conversation_id,sender_id,body,created_at) VALUES (?,?,?,?)', (conversation,artist_a[0], 'Recent ' + str(index), 9999999999999 + index))
+        latest = json.loads(self.request('/api/chat?account_id=' + str(artist_b[0]), cookie=artist_a[1])['body'])['messages']
+        self.assertEqual(len(latest), 200)
+        self.assertEqual(latest[0]['body'], 'Recent 5')
+        self.assertEqual(latest[-1]['body'], 'Recent 204')
 
     def test_admin_dashboard_summary_and_management(self):
         self.assertEqual(self.request('/api/admin/dashboard')['status'], 403)

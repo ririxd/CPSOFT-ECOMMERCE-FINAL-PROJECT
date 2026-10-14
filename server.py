@@ -65,9 +65,9 @@ BREVO_PROVIDER = os.environ.get('BREVO_PROVIDER', 'auto').strip().lower()
 SESSION_SECONDS = 7 * 24 * 60 * 60
 PUBLIC_FILES = {
     '/': 'text/html', '/index.html': 'text/html', '/styles.css': 'text/css',
-    '/css/vendor.css': 'text/css',
+    '/css/vendor.css': 'text/css', '/css/community.css': 'text/css',
     **{'/js/' + name + '.js': 'text/javascript'
-       for name in ('script', 'plugins', 'jquery-1.11.0.min', 'buyer-assistant')},
+       for name in ('script', 'plugins', 'jquery-1.11.0.min', 'buyer-assistant', 'community')},
 }
 AUTH_PATHS = {'/api/auth/register', '/api/auth/login', '/api/auth/logout',
               '/api/auth/delete',
@@ -451,6 +451,14 @@ class AuthApp:
                     id INTEGER PRIMARY KEY, conversation_id INTEGER NOT NULL REFERENCES conversations(id) ON DELETE CASCADE,
                     sender_id INTEGER NOT NULL REFERENCES registered_accounts(id) ON DELETE CASCADE,
                     body TEXT NOT NULL, created_at INTEGER NOT NULL)''')
+                db.execute('''CREATE TABLE IF NOT EXISTS follows (
+                    follower_id INTEGER NOT NULL REFERENCES registered_accounts(id) ON DELETE CASCADE,
+                    following_id INTEGER NOT NULL REFERENCES registered_accounts(id) ON DELETE CASCADE,
+                    created_at INTEGER NOT NULL, PRIMARY KEY (follower_id, following_id),
+                    CHECK (follower_id <> following_id))''')
+                db.execute('CREATE INDEX IF NOT EXISTS follows_following ON follows (following_id, created_at DESC)')
+                db.execute('CREATE INDEX IF NOT EXISTS messages_conversation_recent ON messages (conversation_id, created_at DESC, id DESC)')
+                db.execute('CREATE INDEX IF NOT EXISTS conversations_seller ON conversations (seller_id)')
                 db.execute('''CREATE TABLE IF NOT EXISTS cart_items (
                     buyer_id INTEGER NOT NULL REFERENCES registered_accounts(id) ON DELETE CASCADE,
                     item_id INTEGER NOT NULL REFERENCES listed_items(id) ON DELETE CASCADE,
@@ -810,7 +818,37 @@ class AuthApp:
                           **self.buyer_data(db, account_id)}, []
         raise RequestError(404, 'Buyer action not found.')
 
+    @staticmethod
+    def follow_counts(db, account_id):
+        return {
+            'followers_count': db.execute('SELECT COUNT(*) AS total FROM follows WHERE following_id = ?', (account_id,)).fetchone()['total'],
+            'following_count': db.execute('SELECT COUNT(*) AS total FROM follows WHERE follower_id = ?', (account_id,)).fetchone()['total'],
+        }
+
     def dispatch_community_api(self, environ, db, path, method):
+        relation_match = re.fullmatch(r'/api/profiles/(\d+)/(followers|following)', path)
+        if relation_match and method in ('GET', 'HEAD'):
+            target_id = int(relation_match.group(1))
+            if not db.execute('SELECT 1 FROM registered_accounts WHERE id = ?', (target_id,)).fetchone():
+                raise RequestError(404, 'Profile not found.')
+            try:
+                offset = int(parse_qs(environ.get('QUERY_STRING', '')).get('offset', ['0'])[0])
+            except ValueError:
+                raise RequestError(400, 'Invalid list offset.')
+            if offset < 0:
+                raise RequestError(400, 'Invalid list offset.')
+            # The direction comes from the allowlisted route, never from SQL input.
+            owner, partner = ('following_id', 'follower_id') if relation_match.group(2) == 'followers' else ('follower_id', 'following_id')
+            rows = db.execute(f'''SELECT registered_accounts.id, users.username,
+                users.nickname, users.persona, users.profile_picture,
+                COALESCE(sellers.display_name, '') AS display_name
+                FROM follows JOIN registered_accounts ON registered_accounts.id = follows.{partner}
+                JOIN account_credentials ON account_credentials.account_id = registered_accounts.id
+                JOIN users ON users.email = account_credentials.email
+                LEFT JOIN sellers ON sellers.id = registered_accounts.id
+                WHERE follows.{owner} = ? ORDER BY follows.created_at DESC, registered_accounts.id DESC
+                LIMIT 51 OFFSET ?''', (target_id, offset)).fetchall()
+            return 200, {'profiles': [dict(row) for row in rows[:50]], 'has_more': len(rows) > 50}, []
         if path == '/api/suggested-profiles' and method in ('GET', 'HEAD'):
             user = self.user(db, environ)
             if not user:
@@ -850,7 +888,7 @@ class AuthApp:
                 LIMIT 50''', (like, like, like)).fetchall()
             return 200, {'products': [dict(row) for row in products],
                          'profiles': [dict(row) for row in profiles]}, []
-        if path.startswith('/api/profiles/') and method in ('GET', 'HEAD'):
+        if re.fullmatch(r'/api/profiles/\d+', path) and method in ('GET', 'HEAD'):
             try:
                 account_id = int(path.rsplit('/', 1)[1])
             except ValueError:
@@ -871,6 +909,13 @@ class AuthApp:
                 FROM listed_items WHERE seller_id = ? AND status = 'active'
                 ORDER BY created_at DESC''', (account_id,)).fetchall()
             result = dict(row)
+            viewer = self.user(db, environ)
+            viewer_id = self.account_id_for_user(db, viewer) if viewer else None
+            result.update(self.follow_counts(db, account_id))
+            result['is_self'] = viewer_id == account_id
+            result['is_following'] = bool(viewer_id and db.execute(
+                'SELECT 1 FROM follows WHERE follower_id = ? AND following_id = ?',
+                (viewer_id, account_id)).fetchone())
             result['products'] = []
             for item in products:
                 product = dict(item)
@@ -887,6 +932,34 @@ class AuthApp:
         account_id = self.account_id_for_user(db, user)
         if not account_id:
             raise RequestError(403, 'Your account profile is not available yet.')
+        if method == 'POST':
+            request_host = environ.get('HTTP_HOST', '').strip()
+            request_scheme = 'https' if self.secure else environ.get('wsgi.url_scheme', 'http')
+            request_origin = f'{request_scheme}://{request_host}' if request_host else None
+            if not environ.get('HTTP_ORIGIN') or environ['HTTP_ORIGIN'] not in (self.origin, request_origin):
+                raise RequestError(403, 'Request origin is not allowed.')
+        if path == '/api/social/me' and method in ('GET', 'HEAD'):
+            following = db.execute('SELECT following_id FROM follows WHERE follower_id = ?', (account_id,)).fetchall()
+            return 200, {'account_id': account_id, **self.follow_counts(db, account_id),
+                         'following_ids': [row['following_id'] for row in following]}, []
+        follow_match = re.fullmatch(r'/api/profiles/(\d+)/follow', path)
+        if follow_match and method == 'POST':
+            target_id = int(follow_match.group(1))
+            if target_id == account_id:
+                raise RequestError(400, 'You cannot follow yourself.')
+            if not db.execute('SELECT 1 FROM registered_accounts WHERE id = ?', (target_id,)).fetchone():
+                raise RequestError(404, 'Profile not found.')
+            following = self.read_body(environ, False).get('following')
+            if not isinstance(following, bool):
+                raise RequestError(400, 'Following must be true or false.')
+            with db:
+                if following:
+                    db.execute('''INSERT INTO follows (follower_id, following_id, created_at)
+                        VALUES (?, ?, ?) ON CONFLICT(follower_id, following_id) DO NOTHING''',
+                        (account_id, target_id, now_ms()))
+                else:
+                    db.execute('DELETE FROM follows WHERE follower_id = ? AND following_id = ?', (account_id, target_id))
+            return 200, {'is_following': following, **self.follow_counts(db, target_id)}, []
         if path == '/api/chat/conversations' and method in ('GET', 'HEAD'):
             rows = db.execute('''SELECT conversations.id AS conversation_id,
                 partner.id, users.username, users.nickname, users.persona,
@@ -935,21 +1008,19 @@ class AuthApp:
                 WHERE registered_accounts.id = ?''', (target_id,)).fetchone()
             if not target_user:
                 raise RequestError(404, 'That account could not be found.')
-            if (user.get('persona') == 'artist') == (target_user['persona'] == 'artist'):
-                raise RequestError(400, 'Chat is available between buyers and sellers.')
-            buyer_id, seller_id = (account_id, target_id) if user.get('persona') != 'artist' else (target_id, account_id)
-            conversation = db.execute('SELECT id FROM conversations WHERE buyer_id = ? AND seller_id = ?',
-                                      (buyer_id, seller_id)).fetchone()
+            conversation = db.execute('''SELECT id FROM conversations
+                WHERE (buyer_id = ? AND seller_id = ?) OR (buyer_id = ? AND seller_id = ?)
+                ORDER BY id LIMIT 1''', (account_id, target_id, target_id, account_id)).fetchone()
             if not conversation:
                 return 200, {'messages': []}, []
             rows = db.execute('''SELECT messages.id, messages.sender_id, messages.body, messages.created_at,
-                COALESCE(users.nickname, users.username) AS sender_name
+                COALESCE(NULLIF(users.nickname, ''), users.username) AS sender_name
                 FROM messages JOIN registered_accounts ON registered_accounts.id = messages.sender_id
                 JOIN account_credentials ON account_credentials.account_id = registered_accounts.id
                 JOIN users ON users.email = account_credentials.email
-                WHERE conversation_id = ? ORDER BY messages.created_at ASC LIMIT 200''',
+                WHERE conversation_id = ? ORDER BY messages.created_at DESC, messages.id DESC LIMIT 200''',
                               (conversation['id'],)).fetchall()
-            return 200, {'messages': [dict(row) for row in rows]}, []
+            return 200, {'messages': [dict(row) for row in reversed(rows)]}, []
         if path == '/api/chat' and method == 'POST':
             data = self.read_body(environ, False)
             try:
@@ -968,14 +1039,17 @@ class AuthApp:
                 WHERE registered_accounts.id = ?''', (target_id,)).fetchone()
             if not target_user:
                 raise RequestError(404, 'That account could not be found.')
-            if (user.get('persona') == 'artist') == (target_user['persona'] == 'artist'):
-                raise RequestError(400, 'Chat is available between buyers and sellers.')
-            buyer_id, seller_id = (account_id, target_id) if user.get('persona') != 'artist' else (target_id, account_id)
             with db:
-                conversation = db.execute('''INSERT INTO conversations
-                    (buyer_id, seller_id, created_at) VALUES (?, ?, ?)
-                    ON CONFLICT(buyer_id, seller_id) DO UPDATE SET buyer_id = excluded.buyer_id
-                    RETURNING id''', (buyer_id, seller_id, now_ms())).fetchone()
+                conversation = db.execute('''SELECT id FROM conversations
+                    WHERE (buyer_id = ? AND seller_id = ?) OR (buyer_id = ? AND seller_id = ?)
+                    ORDER BY id LIMIT 1''', (account_id, target_id, target_id, account_id)).fetchone()
+                if not conversation:
+                    # Canonical ordering gives both senders the same new thread.
+                    first_id, second_id = sorted((account_id, target_id))
+                    conversation = db.execute('''INSERT INTO conversations
+                        (buyer_id, seller_id, created_at) VALUES (?, ?, ?)
+                        ON CONFLICT(buyer_id, seller_id) DO UPDATE SET buyer_id = excluded.buyer_id
+                        RETURNING id''', (first_id, second_id, now_ms())).fetchone()
                 db.execute('INSERT INTO messages (conversation_id, sender_id, body, created_at) VALUES (?, ?, ?, ?)',
                            (conversation['id'], account_id, body.strip(), now_ms()))
             return 201, {'message': 'Message sent.'}, []
@@ -1261,7 +1335,7 @@ class AuthApp:
             return (200, {'user': user}, []) if user else (401, {'error': 'Please log in.'}, [])
         if path.startswith('/api/admin/'):
             return self.dispatch_admin_api(environ, db, path, method)
-        if path in ('/api/search', '/api/suggested-profiles') or path.startswith('/api/profiles/') or path in ('/api/support', '/api/chat', '/api/chat/conversations'):
+        if path in ('/api/search', '/api/suggested-profiles', '/api/social/me') or path.startswith('/api/profiles/') or path in ('/api/support', '/api/chat', '/api/chat/conversations'):
             return self.dispatch_community_api(environ, db, path, method)
         if path == '/api/catalog' or path.startswith('/api/buyer/'):
             return self.dispatch_buyer_api(environ, db, path, method)
@@ -1630,7 +1704,9 @@ class AuthApp:
             account_id = parse_qs(environ.get('QUERY_STRING', '')).get('id', [''])[0]
             if not account_id.isdigit():
                 raise RequestError(400, 'Choose a valid profile.')
-            return 200, self.render('profile.html', account_id=account_id), []
+            viewer = self.user(db, environ)
+            return 200, self.render('profile.html', account_id=account_id,
+                viewer_account_id=self.account_id_for_user(db, viewer) if viewer else ''), []
         if path in PUBLIC_FILES:
             relative_path = 'index.html' if path == '/' else path.lstrip('/')
             asset_path = ROOT / 'public' / relative_path

@@ -8,7 +8,7 @@ export async function getAssistantReply(message, request) {
     return 'Hi! I can help you find art, check your cart or orders, and explain payments. What would you like to know?';
   }
   if (/\b(refunds?|returns?|cancel|cancellations?|support|human|agent|complaints?)\b/.test(text)) {
-    return 'For cancellations, returns, refunds, or help from the team, choose “Contact support” below and send a request. The team can review your situation. For questions about a specific artwork, use “Chat with a seller” on this page.';
+    return 'For cancellations, returns, refunds, or help from the team, choose “Contact support” below and send a request. The team can review your situation. For questions about a specific artwork, open “Messages” and search for the account.';
   }
   if (/\b(checkout|check out|purchase)\b/.test(text) || /how.*\b(buy|order)\b/.test(text)) {
     return 'To buy artwork, add an available piece to your cart and check out with products from one seller at a time. Choose cash on delivery or online payment. For online payment, use the seller’s payment details in your cart and enter your payment reference. The seller confirms the order.';
@@ -36,7 +36,7 @@ export async function getAssistantReply(message, request) {
     return 'Your cart:\n\n' + cart.slice(0, 5).map(item => `${item.title} × ${item.quantity}: ${currency(Number(item.price_cents) * Number(item.quantity))}`).join('\n') + (cart.length > 5 ? `\n…and ${cart.length - 5} more items.` : '') + `\n\nTotal: ${currency(total)}. You can adjust quantities or check out in the cart on this page.`;
   }
   if (/\b(seller|artist|message|chat)\b/.test(text)) {
-    return 'Use “Chat with a seller” below the collection. Search for the artist, choose their account, and send a message. You can reopen previous chats from “Recent conversations”.';
+    return 'Open “Messages” at the side of the dashboard. Search for any account, choose them, and send a message. You can reopen previous chats from “Recent conversations”.';
   }
   const terms = (text.match(/[\p{L}\p{N}]+/gu) || []).filter(word => !ignoredWords.has(word));
   const asksForArt = /\b(art|artwork|artworks|product|products|painting|paintings|print|prints|stock|available|price|cost|find|search)\b/.test(text);
