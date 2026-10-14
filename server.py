@@ -1587,6 +1587,7 @@ class AuthApp:
                                     username=user['username'],
                                     display_name=user.get('nickname') or user['username'],
                                     account_id=self.account_id_for_user(db, user) or '',
+                                    seller_dashboard_hidden='' if user.get('persona') == 'artist' else 'hidden',
                                     profile_picture=user.get('profile_picture') or ''), []
         if path == '/profile.html':
             account_id = parse_qs(environ.get('QUERY_STRING', '')).get('id', [''])[0]
