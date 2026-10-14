@@ -73,7 +73,9 @@
         .chat-panel{width:min(1180px,88vw);margin:20px auto 80px}.chat-tools{position:relative}.chat-tools input,.chat-compose textarea{width:100%;border:1px solid var(--line);border-radius:6px;padding:10px;background:white;font:inherit}.chat-results{position:absolute;z-index:9;left:0;right:0;top:calc(100% + 5px);background:var(--card);border:1px solid var(--line);box-shadow:0 12px 30px rgba(32,37,37,.14)}.chat-results[hidden]{display:none}.chat-result{display:block;width:100%;padding:10px;border:0;border-bottom:1px solid var(--line);background:transparent;text-align:left;cursor:pointer}.chat-result:hover{background:#f1ede5}.chat-result small{display:block;color:var(--muted)}.chat-current{display:flex;justify-content:space-between;align-items:center;margin:12px 0 8px;padding:10px;background:#f1ede5}.chat-current[hidden]{display:none}.chat-current small{display:block;color:var(--muted)}.chat-current button{background:transparent;color:var(--accent);padding:0}.chat-messages{display:grid;gap:7px;min-height:70px;max-height:260px;overflow:auto;padding:10px;border:1px solid var(--line);background:#faf8f4}.chat-message{max-width:82%;padding:8px 10px;border-radius:10px;background:#ece8df;white-space:pre-wrap;overflow-wrap:anywhere}.chat-message.mine{justify-self:end;background:var(--green);color:white}.chat-message small{display:block;font-size:10px;opacity:.7}.chat-compose{display:grid;grid-template-columns:1fr auto;gap:8px;margin-top:8px}.chat-compose textarea{min-height:42px;resize:vertical}.chat-compose button{background:var(--green);color:white;padding:9px 14px}.chat-compose button:disabled{opacity:.5}@media(max-width:550px){.chat-compose{grid-template-columns:1fr}}
         @media (max-width: 800px) { .stats, .dashboard-grid { grid-template-columns: 1fr; } .intro { display: block; } .intro .button { display: inline-block; margin-top: 18px; } }
         @media (max-width: 560px) { main { width: 92vw; margin-top: 30px; } header { padding: 14px 4vw; gap: 12px; align-items: flex-start; } .brand { font-size: 22px; } .header-actions { min-width: 0; gap: 8px; flex-wrap: wrap; justify-content: flex-end; font-size: 13px; } .header-actions form { display: inline; } .header-actions .button { padding: 8px 10px; } .header-actions span { display: none; } .stats { grid-template-columns: 1fr 1fr; gap: 8px; margin-bottom: 28px; } .stat, section { padding: 16px; } .stat strong { font-size: 25px; } .product { grid-template-columns: 1fr; gap: 10px; } .product .stock { text-align: left; } .product-info { align-items: flex-start; } .product-info > div { min-width: 0; overflow-wrap: anywhere; } .product .small-button { width: 100%; } .section-heading { align-items: flex-start; flex-direction: column; } .order-head { align-items: flex-start; flex-wrap: wrap; } .stock-modal-card { padding: 24px 18px; } .stock-modal-actions { flex-direction: column-reverse; } .stock-modal-actions button { width: 100%; } }
-    </style>
+
+        .chat-recent{margin:16px 0}.chat-recent h3{margin:0 0 8px;font-size:18px}.chat-conversations{display:grid;gap:6px;max-height:250px;overflow:auto}.chat-conversation{width:100%;padding:10px 12px;border:1px solid var(--line);border-radius:6px;background:var(--card);color:var(--ink);text-align:left;cursor:pointer}.chat-conversation:hover,.chat-conversation:focus-visible{background:#f1ede5}.chat-conversation[aria-pressed="true"]{border-color:var(--green);background:#e6eee9}.chat-conversation-heading strong{min-width:0;overflow-wrap:anywhere}.chat-conversation-heading{display:flex;justify-content:space-between;gap:12px;align-items:center}.chat-conversation time{font-size:11px;color:var(--muted);flex:none}.chat-conversation-preview{display:block;margin-top:3px;color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+</style>
 </head>
 <body>
     <header>
@@ -108,7 +110,7 @@
             </form><hr><h2>Online payment details</h2><p class="muted">Share the account or wallet details buyers should use for online payments.</p><form id="payment-form"><textarea id="payment-details" maxlength="1000" placeholder="Bank or e-wallet name, account name, account number..."></textarea><button type="submit">Save payment details</button></form></section>
         </div>
     </main>
-    <section class="chat-panel" aria-labelledby="chat-title"><h2 id="chat-title">Chat with a buyer</h2><p class="muted">Answer questions about your artwork and orders.</p><div class="chat-tools"><input id="chat-search" type="search" autocomplete="off" placeholder="Search a buyer…" aria-label="Search a buyer"><div id="chat-results" class="chat-results" hidden></div></div><div id="chat-current" class="chat-current" hidden><span><strong id="chat-name"></strong><small>Buyer</small></span><button id="chat-change" type="button">Change</button></div><div id="chat-messages" class="chat-messages" aria-live="polite"></div><form id="chat-compose" class="chat-compose"><textarea id="chat-input" maxlength="2000" placeholder="Write a message…" required disabled></textarea><button type="submit" disabled>Send</button></form><p id="chat-status" class="support-status" role="status"></p></section>
+    <section class="chat-panel" aria-labelledby="chat-title"><h2 id="chat-title">Chat with a buyer</h2><p class="muted">Answer questions about your artwork and orders.</p><div class="chat-recent"><h3 id="chat-recent-title">Recent conversations</h3><div id="chat-conversations" class="chat-conversations" aria-labelledby="chat-recent-title"><p class="muted">Loading conversations…</p></div><p id="chat-recent-status" class="support-status" role="status"></p></div><div class="chat-tools"><input id="chat-search" type="search" autocomplete="off" placeholder="Search a buyer…" aria-label="Search a buyer"><div id="chat-results" class="chat-results" hidden></div></div><div id="chat-current" class="chat-current" hidden><span><strong id="chat-name"></strong><small>Buyer</small></span><button id="chat-change" type="button">Change</button></div><div id="chat-messages" class="chat-messages" aria-live="polite"></div><form id="chat-compose" class="chat-compose"><textarea id="chat-input" maxlength="2000" placeholder="Write a message…" required disabled></textarea><button type="submit" disabled>Send</button></form><p id="chat-status" class="support-status" role="status"></p></section>
     <div id="stock-modal" class="stock-modal" hidden role="dialog" aria-modal="true" aria-labelledby="stock-modal-title">
         <div class="stock-modal-card">
             <button id="stock-modal-close" class="stock-modal-close" type="button" aria-label="Close stock adjustment">×</button>
@@ -157,12 +159,63 @@
         let searchTimer; searchInput.addEventListener('input',()=>{clearTimeout(searchTimer);const q=searchInput.value.trim();if(!q){searchDropdown.hidden=true;return}searchTimer=setTimeout(async()=>{try{renderSearch(await api('/api/search?q='+encodeURIComponent(q)))}catch(error){searchDropdown.hidden=true}},220)}); document.getElementById('market-search').addEventListener('submit',event=>{event.preventDefault();searchInput.dispatchEvent(new Event('input'))}); document.addEventListener('click',event=>{if(!event.target.closest('.search-wrap'))searchDropdown.hidden=true});
         async function loadSuggested(){try{const result=await api('/api/suggested-profiles');document.getElementById('suggested-accounts').innerHTML=result.profiles.length?result.profiles.map(p=>`<a class="suggested-account" href="/profile.html?id=${p.id}"><span class="suggested-avatar"></span><span><strong>${escapeHtml(p.display_name||p.nickname||p.username)}</strong><small>${escapeHtml(p.persona||'Art House member')}</small></span></a>`).join(''):'<p class="muted">No suggestions yet.</p>'}catch(error){document.getElementById('suggested-accounts').innerHTML='<p class="muted">Suggestions unavailable.</p>'}}
         const chatAccountId=Number('{{account_id}}'),chatSearch=document.getElementById('chat-search'),chatResults=document.getElementById('chat-results'),chatCurrent=document.getElementById('chat-current'),chatMessages=document.getElementById('chat-messages'),chatInput=document.getElementById('chat-input'),chatCompose=document.getElementById('chat-compose'),chatStatus=document.getElementById('chat-status');let chatPartner=null,chatTimer;
+        const chatConversations = document.getElementById('chat-conversations');
+        const chatRecentStatus = document.getElementById('chat-recent-status');
+        let recentConversations = [], recentLoading = false;
+        function markCurrentConversation() {
+            chatConversations.querySelectorAll('[data-conversation-account]').forEach(button => {
+                button.setAttribute('aria-pressed', String(Number(button.dataset.conversationAccount) === Number(chatPartner?.id)));
+            });
+        }
+        async function loadRecentConversations() {
+            if (recentLoading) return;
+            recentLoading = true;
+            try {
+                const result = await api('/api/chat/conversations');
+                const conversations = result.conversations || [];
+                // Preserve focused buttons when polling returns the same conversations.
+                if (chatConversations.dataset.loaded !== 'true' || JSON.stringify(conversations) !== JSON.stringify(recentConversations)) {
+                    recentConversations = conversations;
+                    chatConversations.innerHTML = conversations.length ? conversations.map(partner => {
+                        const timestamp = new Date(Number(partner.last_message_at));
+                        const preview = (Number(partner.sender_id) === chatAccountId ? 'You: ' : '') + partner.last_message;
+                        return `<button type="button" class="chat-conversation" data-conversation-account="${partner.id}" aria-pressed="false"><span class="chat-conversation-heading"><strong>${escapeHtml(partner.display_name || partner.nickname || partner.username)}</strong><time datetime="${timestamp.toISOString()}">${escapeHtml(timestamp.toLocaleDateString() + ' ' + timestamp.toLocaleTimeString([], {hour: '2-digit', minute: '2-digit'}))}</time></span><span class="chat-conversation-preview">${escapeHtml(preview)}</span></button>`;
+                    }).join('') : '<p class="muted">No conversations yet. Search for someone to start a chat.</p>';
+                    chatConversations.dataset.loaded = 'true';
+                    markCurrentConversation();
+                }
+                chatRecentStatus.textContent = '';
+            } catch (error) {
+                if (chatConversations.dataset.loaded !== 'true') chatConversations.innerHTML = '';
+                chatRecentStatus.textContent = 'Unable to load recent conversations. Retrying…';
+            } finally { recentLoading = false; }
+        }
+        chatConversations.addEventListener('click', event => {
+            const button = event.target.closest('[data-conversation-account]');
+            if (!button) return;
+            const partner = recentConversations.find(partner => Number(partner.id) === Number(button.dataset.conversationAccount));
+            if (partner) chooseChatPartner(partner);
+        });
+        loadRecentConversations();
+        setInterval(loadRecentConversations, 5000);
         function renderChatMessages(messages){chatMessages.innerHTML=messages.map(m=>`<div class="chat-message${Number(m.sender_id)===chatAccountId?' mine':''}">${escapeHtml(m.body)}<small>${escapeHtml(m.sender_name||'Art House member')}</small></div>`).join('');chatMessages.scrollTop=chatMessages.scrollHeight}
-        async function refreshChat(){if(!chatPartner)return;try{renderChatMessages((await api('/api/chat?account_id='+chatPartner.id)).messages||[]);chatStatus.textContent=''}catch(error){chatStatus.textContent=error.message}}
-        function chooseChatPartner(partner){chatPartner=partner;chatSearch.value='';chatResults.hidden=true;chatCurrent.hidden=false;document.getElementById('chat-name').textContent=partner.display_name||partner.nickname||partner.username;chatInput.disabled=false;chatCompose.querySelector('button').disabled=false;refreshChat();clearInterval(chatTimer);chatTimer=setInterval(refreshChat,5000)}
+        async function refreshChat(){if(!chatPartner)return;const partner=chatPartner;try{const result=await api('/api/chat?account_id='+partner.id);if(chatPartner!==partner)return;renderChatMessages(result.messages||[]);chatStatus.textContent=''}catch(error){if(chatPartner===partner)chatStatus.textContent=error.message}}
+        function chooseChatPartner(partner){chatPartner=partner;chatSearch.value='';chatResults.hidden=true;chatCurrent.hidden=false;document.getElementById('chat-name').textContent=partner.display_name||partner.nickname||partner.username;chatInput.value='';chatInput.disabled=false;chatCompose.querySelector('button').disabled=false;markCurrentConversation();refreshChat();clearInterval(chatTimer);chatTimer=setInterval(refreshChat,5000)}
         chatSearch.addEventListener('input',async()=>{const query=chatSearch.value.trim();if(query.length<2){chatResults.hidden=true;return}try{const result=await api('/api/search?q='+encodeURIComponent(query));const profiles=(result.profiles||[]).filter(profile=>profile.persona!=='artist'&&Number(profile.id)!==chatAccountId);chatResults.innerHTML=profiles.map(profile=>`<button type="button" class="chat-result" data-chat-id="${profile.id}"><strong>${escapeHtml(profile.display_name||profile.nickname||profile.username)}</strong><small>@${escapeHtml(profile.username)}</small></button>`).join('');chatResults.hidden=!profiles.length;chatResults.querySelectorAll('[data-chat-id]').forEach(button=>button.onclick=()=>chooseChatPartner(profiles.find(profile=>Number(profile.id)===Number(button.dataset.chatId))))}catch(error){chatResults.hidden=true}});
-        document.getElementById('chat-change').onclick=()=>{chatPartner=null;clearInterval(chatTimer);chatCurrent.hidden=true;chatMessages.innerHTML='';chatInput.value='';chatInput.disabled=true;chatCompose.querySelector('button').disabled=true;chatSearch.focus()};
-        chatCompose.addEventListener('submit',async event=>{event.preventDefault();if(!chatPartner||!chatInput.value.trim())return;const button=chatCompose.querySelector('button');button.disabled=true;try{await api('/api/chat',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({account_id:chatPartner.id,message:chatInput.value.trim()})});chatInput.value='';await refreshChat()}catch(error){chatStatus.textContent=error.message}finally{button.disabled=false}});
+        document.getElementById('chat-change').onclick=()=>{chatPartner=null;markCurrentConversation();clearInterval(chatTimer);chatCurrent.hidden=true;chatMessages.innerHTML='';chatInput.value='';chatInput.disabled=true;chatCompose.querySelector('button').disabled=true;chatSearch.focus()};
+        chatCompose.addEventListener('submit', async event => {
+    event.preventDefault();
+    if (!chatPartner || !chatInput.value.trim()) return;
+    const partner = chatPartner, message = chatInput.value.trim();
+    const button = chatCompose.querySelector('button');
+    button.disabled = true;
+    try {
+        await api('/api/chat', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({account_id: partner.id, message})});
+        if (chatPartner === partner) { chatInput.value = ''; await refreshChat(); }
+        await loadRecentConversations();
+    } catch (error) { if (chatPartner === partner) chatStatus.textContent = error.message; }
+    finally { button.disabled = !chatPartner; }
+});
         const supportModal=document.getElementById('support-modal');function closeSupport(){supportModal.hidden=true}document.getElementById('support-button').addEventListener('click',()=>{supportModal.hidden=false;document.querySelector('#support-form input').focus()});document.getElementById('support-close').addEventListener('click',closeSupport);document.getElementById('support-cancel').addEventListener('click',closeSupport);supportModal.addEventListener('click',event=>{if(event.target===supportModal)closeSupport()});document.addEventListener('keydown',event=>{if(event.key==='Escape'&&!supportModal.hidden)closeSupport()});document.getElementById('support-form').addEventListener('submit',async event=>{event.preventDefault();const status=document.getElementById('support-status');try{await api('/api/support',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(Object.fromEntries(new FormData(event.target)))});status.textContent='Support request sent.';event.target.reset();setTimeout(closeSupport,900)}catch(error){status.textContent=error.message}});
         const imageInput = document.getElementById('product-images');
         imageInput.addEventListener('change', () => {

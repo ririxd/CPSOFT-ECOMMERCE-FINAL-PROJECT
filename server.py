@@ -887,6 +887,27 @@ class AuthApp:
         account_id = self.account_id_for_user(db, user)
         if not account_id:
             raise RequestError(403, 'Your account profile is not available yet.')
+        if path == '/api/chat/conversations' and method in ('GET', 'HEAD'):
+            rows = db.execute('''SELECT conversations.id AS conversation_id,
+                partner.id, users.username, users.nickname, users.persona,
+                COALESCE(sellers.display_name, '') AS display_name,
+                messages.body AS last_message, messages.created_at AS last_message_at,
+                messages.sender_id
+                FROM conversations
+                JOIN registered_accounts AS partner ON partner.id = CASE
+                    WHEN conversations.buyer_id = ? THEN conversations.seller_id
+                    ELSE conversations.buyer_id END
+                JOIN account_credentials ON account_credentials.account_id = partner.id
+                JOIN users ON users.email = account_credentials.email
+                LEFT JOIN sellers ON sellers.id = partner.id
+                JOIN messages ON messages.id = (
+                    SELECT latest.id FROM messages AS latest
+                    WHERE latest.conversation_id = conversations.id
+                    ORDER BY latest.created_at DESC, latest.id DESC LIMIT 1)
+                WHERE conversations.buyer_id = ? OR conversations.seller_id = ?
+                ORDER BY messages.created_at DESC, messages.id DESC LIMIT 50''',
+                (account_id, account_id, account_id)).fetchall()
+            return 200, {'conversations': [dict(row) for row in rows]}, []
         if path == '/api/support' and method == 'POST':
             data = self.read_body(environ, False)
             subject, message = data.get('subject', ''), data.get('message', '')
@@ -1203,7 +1224,7 @@ class AuthApp:
             return (200, {'user': user}, []) if user else (401, {'error': 'Please log in.'}, [])
         if path.startswith('/api/admin/'):
             return self.dispatch_admin_api(environ, db, path, method)
-        if path in ('/api/search', '/api/suggested-profiles') or path.startswith('/api/profiles/') or path in ('/api/support', '/api/chat'):
+        if path in ('/api/search', '/api/suggested-profiles') or path.startswith('/api/profiles/') or path in ('/api/support', '/api/chat', '/api/chat/conversations'):
             return self.dispatch_community_api(environ, db, path, method)
         if path == '/api/catalog' or path.startswith('/api/buyer/'):
             return self.dispatch_buyer_api(environ, db, path, method)

@@ -184,6 +184,71 @@ class AuthTests(unittest.TestCase):
         dashboard = self.request('/api/seller/dashboard', cookie=cookie)
         self.assertEqual(json.loads(dashboard['body'])['products'][0]['images'], [image])
 
+    def test_recent_conversations_are_private_ordered_and_persistent(self):
+        def account(name, persona):
+            with self.app.connect() as db:
+                with db:
+                    user_id = db.execute("""INSERT INTO users
+                        (username, email, salt, password_hash, persona)
+                        VALUES (?, ?, ?, ?, ?) RETURNING id""",
+                        (name, name + '@example.test', '0' * 32, '0' * 128, persona)).fetchone()['id']
+                    user = dict(db.execute('SELECT * FROM users WHERE id = ?', (user_id,)).fetchone())
+                    self.app.create_seller_for_user(db, user)
+                    account_id = self.app.account_id_for_user(db, user)
+                    cookie = self.app.issue_session(db, {}, user_id)[1].split(';')[0]
+            return account_id, cookie
+
+        buyer, buyer_cookie = account('chat_buyer', 'collector')
+        seller, seller_cookie = account('chat_seller', 'artist')
+        other_seller, other_cookie = account('other_seller', 'artist')
+        outsider, outsider_cookie = account('chat_outsider', 'collector')
+        with sqlite3.connect(self.db_path) as db:
+            db.execute('INSERT INTO conversations (buyer_id, seller_id, created_at) VALUES (?, ?, ?)',
+                       (buyer, seller, 1234567890000))
+        self.assertEqual(self.request('/api/chat/conversations')['status'], 401)
+        empty = self.request('/api/chat/conversations', cookie=buyer_cookie)
+        self.assertEqual(empty['status'], 200)
+        self.assertEqual(json.loads(empty['body'])['conversations'], [])
+
+        def send(cookie, target, message):
+            result = self.request('/api/chat', {'account_id': target, 'message': message}, cookie=cookie)
+            self.assertEqual(result['status'], 201)
+
+        send(buyer_cookie, seller, 'First question')
+        send(buyer_cookie, other_seller, 'Second question')
+        send(seller_cookie, buyer, '<img src=x onerror=alert(1)> Latest reply')
+        send(outsider_cookie, other_seller, 'Private outsider conversation')
+        # Equal timestamps exercise the stable message-ID ordering.
+        with sqlite3.connect(self.db_path) as db:
+            db.execute('UPDATE messages SET created_at = 1234567890000')
+        self.app = AuthApp(self.db_path)
+        result = self.request('/api/chat/conversations', cookie=buyer_cookie)
+        self.assertEqual(result['headers']['Cache-Control'], 'no-store')
+        recent = json.loads(result['body'])['conversations']
+        self.assertEqual([row['id'] for row in recent], [seller, other_seller])
+        self.assertEqual(recent[0]['username'], 'chat_seller')
+        self.assertEqual(recent[0]['last_message'], '<img src=x onerror=alert(1)> Latest reply')
+        self.assertEqual(recent[0]['sender_id'], seller)
+        self.assertEqual(recent[0]['last_message_at'], 1234567890000)
+        self.assertNotIn('email', recent[0])
+        seller_recent = json.loads(self.request('/api/chat/conversations', cookie=seller_cookie)['body'])['conversations']
+        self.assertEqual([row['id'] for row in seller_recent], [buyer])
+        self.assertEqual(seller_recent[0]['conversation_id'], recent[0]['conversation_id'])
+        outsider_recent = json.loads(self.request('/api/chat/conversations', cookie=outsider_cookie)['body'])['conversations']
+        self.assertEqual([row['id'] for row in outsider_recent], [other_seller])
+        # Timestamps take priority over IDs for both the preview and list order.
+        with sqlite3.connect(self.db_path) as db:
+            db.execute("UPDATE messages SET created_at = 1234567890002 WHERE body = 'First question'")
+            db.execute("UPDATE messages SET created_at = 1234567890003 WHERE body = 'Second question'")
+        reordered = json.loads(self.request('/api/chat/conversations', cookie=buyer_cookie)['body'])['conversations']
+        self.assertEqual([row['id'] for row in reordered], [other_seller, seller])
+        self.assertEqual(reordered[1]['last_message'], 'First question')
+        for cookie, page in [(buyer_cookie, 'buyer'), (seller_cookie, 'seller')]:
+            html = self.request('/' + page + '-dashboard.html', cookie=cookie)
+            self.assertEqual(html['status'], 200)
+            self.assertIn('id="chat-conversations"', html['body'])
+            self.assertNotIn('{{account_id}}', html['body'])
+
     def test_buyer_catalog_cart_checkout_and_order_status(self):
         image = 'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+A8AAQUBAScY42YAAAAASUVORK5CYII='
         with sqlite3.connect(self.db_path) as db:
