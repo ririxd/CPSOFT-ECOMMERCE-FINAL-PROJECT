@@ -24,6 +24,32 @@
         .profile-status.success { color: #31554b; }
         .danger-zone { margin-top: 28px; padding-top: 20px; border-top: 1px solid #e3ded4; }
         .danger-button { border: 0; border-radius: 6px; padding: 10px 12px; background: #8a422b; color: #fff; }
+        .chat-section { margin-top: 28px; padding-top: 24px; border-top: 1px solid #e3ded4; }
+        .chat-search { position: relative; }
+        .chat-search input, .chat-composer textarea { width: 100%; border: 1px solid #e3ded4; border-radius: 6px; padding: 10px; background: #fff; font: inherit; }
+        .chat-results { position: absolute; z-index: 4; left: 0; right: 0; top: calc(100% + 5px); display: grid; background: #fff; border: 1px solid #e3ded4; border-radius: 6px; box-shadow: 0 12px 30px rgba(32,37,37,.12); overflow: hidden; }
+        .chat-results[hidden] { display: none; }
+        .chat-result { display: flex; gap: 10px; align-items: center; width: 100%; padding: 10px; border: 0; border-bottom: 1px solid #e3ded4; background: #fff; text-align: left; cursor: pointer; font: inherit; }
+        .chat-result:last-child { border-bottom: 0; }
+        .chat-result:hover, .chat-result:focus-visible { background: #f4f0e9; outline: 0; }
+        .chat-result strong, .chat-result small { display: block; }
+        .chat-result small { color: #6d7470; margin-top: 2px; }
+        .chat-avatar { width: 38px; height: 38px; border-radius: 50%; object-fit: cover; background: #ece8df; flex: none; }
+        .chat-current { display: flex; justify-content: space-between; gap: 12px; align-items: center; margin: 18px 0 10px; padding: 10px 12px; background: #f4f0e9; border-radius: 6px; }
+        .chat-current[hidden] { display: none; }
+        .chat-current strong { display: block; }
+        .chat-current small { color: #6d7470; }
+        .chat-clear { border: 0; background: transparent; color: #8a422b; cursor: pointer; }
+        .chat-messages { display: grid; gap: 8px; min-height: 80px; max-height: 300px; overflow-y: auto; padding: 12px; border: 1px solid #e3ded4; border-radius: 6px; background: #faf8f4; }
+        .chat-messages:empty::before { content: 'Choose an account to start a conversation.'; color: #6d7470; font-size: 13px; }
+        .chat-message { max-width: 82%; padding: 8px 11px; border-radius: 10px; background: #ece8df; white-space: pre-wrap; overflow-wrap: anywhere; }
+        .chat-message.mine { justify-self: end; background: #31554b; color: #fff; }
+        .chat-message small { display: block; margin-top: 3px; opacity: .7; font-size: 10px; }
+        .chat-composer { display: grid; grid-template-columns: 1fr auto; gap: 8px; margin-top: 10px; }
+        .chat-composer textarea { min-height: 42px; resize: vertical; }
+        .chat-composer button { border: 0; border-radius: 6px; padding: 10px 15px; background: #31554b; color: #fff; cursor: pointer; }
+        .chat-composer button:disabled { opacity: .55; cursor: not-allowed; }
+        @media (max-width: 600px) { .chat-composer { grid-template-columns: 1fr; } }
     </style>
 </head>
 <body class="auth-page">
@@ -104,6 +130,27 @@
                     <p class="profile-status" id="profile-status" role="status" aria-live="polite"></p>
                 </form>
             </section>
+            <section class="chat-section" aria-labelledby="chat-heading">
+                <p class="eyebrow">Community messages</p>
+                <h3 id="chat-heading">Talk with buyers and sellers.</h3>
+                <p class="auth-description">Search for another Art House member and ask about their work, listings, or orders.</p>
+                <div class="chat-search">
+                    <label class="visually-hidden" for="chat-partner-search">Search buyers and sellers</label>
+                    <input id="chat-partner-search" type="search" autocomplete="off" placeholder="Search a buyer or seller…">
+                    <div id="chat-results" class="chat-results" hidden></div>
+                </div>
+                <div id="chat-current" class="chat-current" hidden>
+                    <div><strong id="chat-partner-name"></strong><small id="chat-partner-role"></small></div>
+                    <button id="chat-clear" class="chat-clear" type="button">Change</button>
+                </div>
+                <div id="chat-messages" class="chat-messages" aria-live="polite"></div>
+                <form id="chat-composer" class="chat-composer">
+                    <label class="visually-hidden" for="chat-message">Message</label>
+                    <textarea id="chat-message" maxlength="2000" placeholder="Write a message…" required disabled></textarea>
+                    <button type="submit" disabled>Send</button>
+                </form>
+                <p id="chat-status" class="profile-status" role="status" aria-live="polite"></p>
+            </section>
             <p><a class="text-link" href="/buyer-dashboard.html">Shop the collection and view orders ↗</a></p>
             <form method="post" action="/api/auth/logout"><button id="logout" class="button-dark auth-submit" type="submit">Log out</button></form>
             <div class="danger-zone">
@@ -120,6 +167,7 @@
         const interestOnboarding = document.getElementById('art-interest-onboarding');
         const deleteStatus = document.getElementById('delete-status');
         const savedPersona = '{{persona}}';
+        const currentAccountId = Number('{{account_id}}') || 0;
         if (new URLSearchParams(window.location.search).get('welcome') === '1' || !savedPersona) {
             onboarding.hidden = false;
         }
@@ -221,6 +269,108 @@
             } catch (error) {
                 profileStatus.className = 'profile-status error';
                 profileStatus.textContent = error.message;
+            } finally {
+                button.disabled = false;
+            }
+        });
+
+        const chatSearch = document.getElementById('chat-partner-search');
+        const chatResults = document.getElementById('chat-results');
+        const chatCurrent = document.getElementById('chat-current');
+        const chatPartnerName = document.getElementById('chat-partner-name');
+        const chatPartnerRole = document.getElementById('chat-partner-role');
+        const chatMessages = document.getElementById('chat-messages');
+        const chatComposer = document.getElementById('chat-composer');
+        const chatMessage = document.getElementById('chat-message');
+        const chatStatus = document.getElementById('chat-status');
+        let chatPartner = null;
+        let chatTimer = null;
+        const escapeHtml = value => String(value ?? '').replace(/[&<>"']/g, character => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[character]));
+        const chatApi = async (url, options) => {
+            const response = await fetch(url, {credentials: 'same-origin', ...options});
+            const result = await response.json().catch(() => ({}));
+            if (!response.ok) throw new Error(result.error || 'Chat is unavailable.');
+            return result;
+        };
+        const renderChatMessages = messages => {
+            chatMessages.innerHTML = '';
+            messages.forEach(message => {
+                const item = document.createElement('div');
+                item.className = `chat-message${Number(message.sender_id) === currentAccountId ? ' mine' : ''}`;
+                item.innerHTML = `${escapeHtml(message.body)}<small>${escapeHtml(message.sender_name || 'Art House member')}</small>`;
+                chatMessages.appendChild(item);
+            });
+            chatMessages.scrollTop = chatMessages.scrollHeight;
+        };
+        const loadChat = async () => {
+            if (!chatPartner) return;
+            try {
+                const result = await chatApi(`/api/chat?account_id=${encodeURIComponent(chatPartner.id)}`);
+                renderChatMessages(result.messages || []);
+                chatStatus.textContent = '';
+            } catch (error) {
+                chatStatus.className = 'profile-status error';
+                chatStatus.textContent = error.message;
+            }
+        };
+        const selectChatPartner = partner => {
+            chatPartner = partner;
+            chatSearch.value = '';
+            chatResults.hidden = true;
+            chatCurrent.hidden = false;
+            chatPartnerName.textContent = partner.display_name || partner.nickname || partner.username;
+            chatPartnerRole.textContent = partner.persona === 'artist' ? 'Seller' : 'Buyer';
+            chatMessage.disabled = false;
+            chatComposer.querySelector('button').disabled = false;
+            loadChat();
+            clearInterval(chatTimer);
+            chatTimer = setInterval(loadChat, 5000);
+        };
+        chatSearch.addEventListener('input', async () => {
+            const query = chatSearch.value.trim();
+            if (query.length < 2) {
+                chatResults.hidden = true;
+                return;
+            }
+            try {
+                const result = await chatApi(`/api/search?q=${encodeURIComponent(query)}`);
+                chatResults.innerHTML = '';
+                (result.profiles || []).filter(profile => Number(profile.id) !== currentAccountId).forEach(profile => {
+                    const button = document.createElement('button');
+                    button.type = 'button';
+                    button.className = 'chat-result';
+                    button.innerHTML = `<span class="chat-avatar"></span><span><strong>${escapeHtml(profile.display_name || profile.nickname || profile.username)}</strong><small>${profile.persona === 'artist' ? 'Seller' : 'Buyer'} · @${escapeHtml(profile.username)}</small></span>`;
+                    button.addEventListener('click', () => selectChatPartner(profile));
+                    chatResults.appendChild(button);
+                });
+                chatResults.hidden = !chatResults.children.length;
+            } catch (error) {
+                chatStatus.className = 'profile-status error';
+                chatStatus.textContent = error.message;
+            }
+        });
+        document.getElementById('chat-clear').addEventListener('click', () => {
+            chatPartner = null;
+            clearInterval(chatTimer);
+            chatCurrent.hidden = true;
+            chatMessages.innerHTML = '';
+            chatMessage.value = '';
+            chatMessage.disabled = true;
+            chatComposer.querySelector('button').disabled = true;
+            chatSearch.focus();
+        });
+        chatComposer.addEventListener('submit', async event => {
+            event.preventDefault();
+            if (!chatPartner || !chatMessage.value.trim()) return;
+            const button = chatComposer.querySelector('button');
+            button.disabled = true;
+            try {
+                await chatApi('/api/chat', {method: 'POST', headers: {'Content-Type': 'application/json'}, body: JSON.stringify({account_id: chatPartner.id, message: chatMessage.value.trim()})});
+                chatMessage.value = '';
+                await loadChat();
+            } catch (error) {
+                chatStatus.className = 'profile-status error';
+                chatStatus.textContent = error.message;
             } finally {
                 button.disabled = false;
             }

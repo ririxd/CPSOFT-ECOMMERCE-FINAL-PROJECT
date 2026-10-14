@@ -799,11 +799,14 @@ class AuthApp:
                     checkout_items.quantity, checkout_items.unit_price_cents
                     FROM checkout_items JOIN listed_items ON listed_items.id = checkout_items.item_id
                     WHERE checkout_items.checkout_id = ?''', (checkout_id,)).fetchall()]
+            receipt_sent = True
             try:
                 send_receipt_email(buyer_email, checkout_id, total, receipt_items)
             except (RuntimeError, smtplib.SMTPException, OSError):
+                receipt_sent = False
                 logging.exception('Art House e-receipt could not be sent for order %s', checkout_id)
             return 201, {'message': 'Order placed.', 'order_id': checkout_id,
+                          'receipt_sent': receipt_sent,
                           **self.buyer_data(db, account_id)}, []
         raise RequestError(404, 'Buyer action not found.')
 
@@ -868,7 +871,15 @@ class AuthApp:
                 FROM listed_items WHERE seller_id = ? AND status = 'active'
                 ORDER BY created_at DESC''', (account_id,)).fetchall()
             result = dict(row)
-            result['products'] = [dict(item) for item in products]
+            result['products'] = []
+            for item in products:
+                product = dict(item)
+                try:
+                    decoded_images = json.loads(product['images'])
+                    product['images'] = decoded_images if isinstance(decoded_images, list) else [decoded_images]
+                except (TypeError, json.JSONDecodeError):
+                    product['images'] = []
+                result['products'].append(product)
             return 200, {'profile': result}, []
         user = self.user(db, environ)
         if not user:
@@ -894,6 +905,17 @@ class AuthApp:
                 target_id = int(target)
             except ValueError:
                 raise RequestError(400, 'Choose a conversation partner.')
+            if target_id == account_id:
+                raise RequestError(400, 'Choose another account.')
+            target_user = db.execute('''SELECT users.persona
+                FROM registered_accounts
+                JOIN account_credentials ON account_credentials.account_id = registered_accounts.id
+                JOIN users ON users.email = account_credentials.email
+                WHERE registered_accounts.id = ?''', (target_id,)).fetchone()
+            if not target_user:
+                raise RequestError(404, 'That account could not be found.')
+            if (user.get('persona') == 'artist') == (target_user['persona'] == 'artist'):
+                raise RequestError(400, 'Chat is available between buyers and sellers.')
             buyer_id, seller_id = (account_id, target_id) if user.get('persona') != 'artist' else (target_id, account_id)
             conversation = db.execute('SELECT id FROM conversations WHERE buyer_id = ? AND seller_id = ?',
                                       (buyer_id, seller_id)).fetchone()
@@ -913,9 +935,20 @@ class AuthApp:
                 target_id = int(data.get('account_id'))
             except (TypeError, ValueError):
                 raise RequestError(400, 'Choose a conversation partner.')
+            if target_id == account_id:
+                raise RequestError(400, 'Choose another account.')
             body = data.get('message', '')
             if not isinstance(body, str) or not body.strip() or len(body) > 2000:
                 raise RequestError(400, 'Enter a message under 2000 characters.')
+            target_user = db.execute('''SELECT users.persona
+                FROM registered_accounts
+                JOIN account_credentials ON account_credentials.account_id = registered_accounts.id
+                JOIN users ON users.email = account_credentials.email
+                WHERE registered_accounts.id = ?''', (target_id,)).fetchone()
+            if not target_user:
+                raise RequestError(404, 'That account could not be found.')
+            if (user.get('persona') == 'artist') == (target_user['persona'] == 'artist'):
+                raise RequestError(400, 'Chat is available between buyers and sellers.')
             buyer_id, seller_id = (account_id, target_id) if user.get('persona') != 'artist' else (target_id, account_id)
             with db:
                 conversation = db.execute('''INSERT INTO conversations
@@ -1488,9 +1521,11 @@ class AuthApp:
             user = self.user(db, environ)
             if not user:
                 return 302, '', [('Location', '/login.html')]
+            account_id = self.account_id_for_user(db, user)
             return 200, self.render(
                 'account.html',
                 **{**user,
+                   'account_id': account_id or '',
                    'persona': user.get('persona') or '',
                    'dashboard_url': '/seller-dashboard.html' if user.get('persona') == 'artist'
                    else '/buyer-dashboard.html'}), []
