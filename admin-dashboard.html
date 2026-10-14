@@ -12,7 +12,7 @@
     h1,h2{font-family:Georgia,serif;font-weight:400}h1{font-size:44px;margin:8px 0 25px}
     h2{margin-top:0}.table-wrap{overflow:auto}table{border-collapse:collapse;width:100%;font-size:13px}
     th,td{text-align:left;border-top:1px solid #e3ded4;padding:10px 8px;vertical-align:top}
-    button{border:0;background:#31554b;color:#fff;padding:7px 10px;cursor:pointer}
+    button{border:0;background:#31554b;color:#fff;padding:7px 10px;cursor:pointer}.close-ticket{background:#bd6846}.closed{color:#31554b;font-weight:600}
     button.unban{background:#bd6846}.muted{color:#6d7470}.notice{min-height:22px;color:#31554b}
     @media(max-width:800px){.grid{grid-template-columns:1fr}h1{font-size:36px}}
   </style>
@@ -30,7 +30,8 @@ function table(rows, columns){return '<table><thead><tr>'+columns.map(c=>'<th>'+
 async function load(){try{const data=await api('/api/admin/dashboard');
 document.getElementById('users').innerHTML=table(data.users,[['Account',r=>esc(r.username)+'<br>'+esc(r.email)],['Role',r=>esc(r.persona||r.account_type)],['Status',r=>r.banned?'Banned':'Active'],['Action',r=>'<button class="'+(r.banned?'unban':'')+'" data-id="'+r.id+'" data-banned="'+(!r.banned)+'">'+(r.banned?'Unban':'Ban')+'</button>']]);
 document.getElementById('orders').innerHTML=table(data.orders,[['Order',r=>'#'+r.id],['Buyer',r=>esc(r.buyer_email)],['Status',r=>esc(r.status)],['Total',r=>'₱'+(r.total_cents/100).toFixed(2)]]);
-document.getElementById('tickets').innerHTML=data.tickets.length?table(data.tickets,[['From',r=>esc(r.account_id)],['Subject',r=>esc(r.subject)],['Message',r=>esc(r.message)],['Status',r=>esc(r.status)] ]):'<p class="muted">No support requests yet.</p>';
-document.querySelectorAll('[data-id]').forEach(button=>button.onclick=async()=>{try{await api('/api/admin/accounts/'+button.dataset.id+'/ban',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({banned:button.dataset.banned==='true',reason:'Reviewed by Art House administration'})});load()}catch(error){notice.textContent=error.message}})}catch(error){notice.textContent=error.message}}
+document.getElementById('tickets').innerHTML=data.tickets.length?table(data.tickets,[['From',r=>esc(r.account_id)],['Subject',r=>esc(r.subject)],['Message',r=>esc(r.message)],['Status',r=>`<span class="${r.status==='closed'?'closed':''}">${esc(r.status)}</span>`],['Action',r=>r.status==='closed'?'<span class="muted">Closed</span>':`<button class="close-ticket" data-close-ticket="${r.id}">Close</button>`] ]):'<p class="muted">No support requests yet.</p>';
+document.querySelectorAll('[data-id]').forEach(button=>button.onclick=async()=>{try{await api('/api/admin/accounts/'+button.dataset.id+'/ban',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({banned:button.dataset.banned==='true',reason:'Reviewed by Art House administration'})});load()}catch(error){notice.textContent=error.message}});
+document.querySelectorAll('[data-close-ticket]').forEach(button=>button.onclick=async()=>{try{await api('/api/admin/support/'+button.dataset.closeTicket+'/close',{method:'POST'});await load()}catch(error){notice.textContent=error.message}})}catch(error){notice.textContent=error.message}}
 load();
 </script></body></html>

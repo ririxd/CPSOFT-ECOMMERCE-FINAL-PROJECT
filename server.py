@@ -979,6 +979,16 @@ class AuthApp:
             tickets = db.execute('SELECT * FROM support_tickets ORDER BY created_at DESC LIMIT 100').fetchall()
             return 200, {'users': [dict(row) for row in users], 'orders': [dict(row) for row in orders],
                          'tickets': [dict(row) for row in tickets]}, []
+        ticket_match = re.fullmatch(r'/api/admin/support/(\d+)/close', path)
+        if ticket_match and method == 'POST':
+            ticket_id = int(ticket_match.group(1))
+            with db:
+                updated = db.execute(
+                    "UPDATE support_tickets SET status = 'closed' WHERE id = ? AND status <> 'closed'",
+                    (ticket_id,)).rowcount
+            if not updated:
+                raise RequestError(404, 'Support request not found or already closed.')
+            return 200, {'message': 'Support request closed.'}, []
         match = re.fullmatch(r'/api/admin/accounts/(\d+)/ban', path)
         if match and method == 'POST':
             data = self.read_body(environ, False)
@@ -1546,6 +1556,7 @@ class AuthApp:
             return 200, self.render('seller-dashboard.html',
                                     username=user['username'],
                                     display_name=user.get('nickname') or user['username'],
+                                    account_id=self.account_id_for_user(db, user) or '',
                                     profile_picture=user.get('profile_picture') or ''), []
         if path == '/buyer-dashboard.html':
             user = self.user(db, environ)
@@ -1554,6 +1565,7 @@ class AuthApp:
             return 200, self.render('buyer-dashboard.html',
                                     username=user['username'],
                                     display_name=user.get('nickname') or user['username'],
+                                    account_id=self.account_id_for_user(db, user) or '',
                                     profile_picture=user.get('profile_picture') or ''), []
         if path == '/profile.html':
             account_id = parse_qs(environ.get('QUERY_STRING', '')).get('id', [''])[0]
