@@ -727,8 +727,6 @@ class AuthApp:
         user = self.user(db, environ)
         if not user:
             raise RequestError(401, 'Please log in to use your cart and orders.')
-        if user.get('persona') == 'artist':
-            raise RequestError(403, 'Seller accounts use the creator dashboard.')
         account_id = self.account_id_for_user(db, user)
         if not account_id:
             raise RequestError(403, 'Your buyer profile is not available yet.')
@@ -1518,12 +1516,15 @@ class AuthApp:
             user = self.user(db, environ)
             if not user:
                 return 302, '', [('Location', '/login.html')]
-            if user.get('persona') == 'artist':
-                return 302, '', [('Location', '/seller-dashboard.html')]
             return 200, self.render('buyer-dashboard.html',
                                     username=user['username'],
                                     display_name=user.get('nickname') or user['username'],
                                     profile_picture=user.get('profile_picture') or ''), []
+        if path == '/profile.html':
+            account_id = parse_qs(environ.get('QUERY_STRING', '')).get('id', [''])[0]
+            if not account_id.isdigit():
+                raise RequestError(400, 'Choose a valid profile.')
+            return 200, self.render('profile.html', account_id=account_id), []
         if path in PUBLIC_FILES:
             relative_path = 'index.html' if path == '/' else path.lstrip('/')
             asset_path = ROOT / 'public' / relative_path

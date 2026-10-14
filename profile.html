@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Profile — Art House</title>
+  <link rel="stylesheet" href="/styles.css?v=profile-20261014">
+  <style>
+    :root{--ink:#202525;--muted:#6d7470;--paper:#f7f4ee;--card:#fffdf9;--line:#e3ded4;--green:#31554b;--accent:#bd6846}
+    *{box-sizing:border-box}body{margin:0;background:var(--paper);color:var(--ink);font:15px/1.5 Arial,sans-serif}
+    header{display:flex;justify-content:space-between;align-items:center;padding:22px 6vw;background:var(--card);border-bottom:1px solid var(--line)}
+    .brand{color:var(--ink);font:700 25px Georgia,serif;text-decoration:none}.brand span{font-weight:400}.back{color:var(--green);text-decoration:none}
+    main{width:min(1000px,88vw);margin:48px auto}.profile-card,section{background:var(--card);border:1px solid var(--line);padding:28px;border-radius:12px;margin-bottom:20px}
+    .profile-head{display:flex;gap:20px;align-items:center}.avatar{width:94px;height:94px;border-radius:50%;object-fit:cover;background:#ece8df}.eyebrow{color:var(--accent);font-size:11px;font-weight:700;letter-spacing:2px;text-transform:uppercase}
+    h1,h2{font-family:Georgia,serif;font-weight:400}h1{font-size:42px;margin:5px 0}.muted{color:var(--muted)}.products{display:grid;grid-template-columns:repeat(3,1fr);gap:14px}.product{border:1px solid var(--line);border-radius:8px;padding:12px}.product-image{width:100%;aspect-ratio:1;object-fit:cover;background:#ece8df;border-radius:5px}.product h3{font:18px Georgia,serif;margin:10px 0 3px}.error{color:var(--accent)}
+    @media(max-width:650px){main{width:92vw;margin-top:28px}.profile-head{align-items:flex-start}.profile-head h1{font-size:32px}.products{grid-template-columns:1fr 1fr}}
+  </style>
+</head>
+<body><header><a class="brand" href="/">art<span>house</span></a><a class="back" href="/buyer-dashboard.html">Back to market ↗</a></header>
+<main><div id="state" class="profile-card"><p class="muted">Loading profile…</p></div></main>
+<script>
+const state=document.getElementById('state'), id='{{account_id}}';
+const esc=v=>String(v??'').replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+function image(value){return value?`<img class="product-image" src="${esc(value)}" alt="">`:'<div class="product-image"></div>'}
+async function load(){try{const response=await fetch('/api/profiles/'+encodeURIComponent(id));const data=await response.json();if(!response.ok)throw Error(data.error||'Profile unavailable.');const p=data.profile;state.innerHTML=`<div class="profile-head"><img class="avatar" src="${esc(p.profile_picture||'')}" alt="" onerror="this.style.display='none'"><div><div class="eyebrow">${esc(p.persona||'Art House member')}</div><h1>${esc(p.display_name||p.nickname||p.username)}</h1><p class="muted">@${esc(p.username)}</p></div></div><p>${esc(p.bio||p.profile_details||'This member has not added a profile description yet.')}</p>`+(p.products.length?`<section><h2>Product listings</h2><div class="products">${p.products.map(item=>`<article class="product">${image(item.images&&item.images[0])}<h3>${esc(item.title)}</h3><p class="muted">${esc(item.description||'No description')}</p><strong>₱${(Number(item.price_cents||0)/100).toFixed(2)}</strong></article>`).join('')}</div></section>`:'<section><p class="muted">No active product listings yet.</p></section>')}catch(error){state.innerHTML='<p class="error">'+esc(error.message)+'</p>'}}
+load();
+</script></body></html>
